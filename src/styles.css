@@ -138,8 +138,21 @@
     border-color: var(--color-border);
   }
 
-  body {
+  html, body {
+    font-family: var(--font-display);
     background-color: var(--color-background);
     color: var(--color-foreground);
+    -webkit-font-smoothing: antialiased;
+  }
+}
+
+@utility tracking-display {
+  letter-spacing: 0.2em;
+}
+
+@utility no-scrollbar {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
   }
 }
