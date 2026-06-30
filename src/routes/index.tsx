@@ -5,8 +5,6 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
-  FileSpreadsheet,
-  FileText,
   Filter,
   Grid3x3,
   ImageIcon,
@@ -23,7 +21,6 @@ import { Toaster } from "@/components/ui/sonner";
 import type { Filters, Product, SortKey, ViewMode } from "@/lib/stock-types";
 import { DRIVE_IMAGE_MAP, DRIVE_IMAGE_MAP_BY_BRAND } from "@/lib/drive-image-map";
 import { formatNum, formatTime } from "@/lib/format";
-import { exportToExcel, exportToPdf } from "@/lib/exporters";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -467,36 +464,6 @@ function PortalPage() {
   };
   const clearSelection = () => setSelected(new Set());
 
-  const selectedProducts = useMemo(
-    () => products.filter((p) => selected.has(p.reference)),
-    [products, selected],
-  );
-
-  const handleExportPdf = async (onlySelected: boolean) => {
-    const list = onlySelected ? selectedProducts : sorted;
-    if (!list.length) return toast.error("Nenhum produto para exportar.");
-    const toastId = toast.loading("Gerando PDF...");
-    try {
-      await exportToPdf(list);
-      toast.success("PDF gerado com sucesso.", { id: toastId });
-    } catch (error) {
-      console.error(error);
-      toast.error("Não foi possível gerar o PDF.", { id: toastId });
-    }
-  };
-  const handleExportExcel = async (onlySelected: boolean) => {
-    const list = onlySelected ? selectedProducts : sorted;
-    if (!list.length) return toast.error("Nenhum produto para exportar.");
-    const toastId = toast.loading("Gerando Excel...");
-    try {
-      await exportToExcel(list);
-      toast.success("Planilha exportada com sucesso.", { id: toastId });
-    } catch (error) {
-      console.error(error);
-      toast.error("Não foi possível gerar a planilha.", { id: toastId });
-    }
-  };
-
   const handleShare = () => {
     const params = new URLSearchParams();
     if (selected.size) params.set("refs", [...selected].join(","));
@@ -738,20 +705,6 @@ function PortalPage() {
                 <LayoutList className="h-3.5 w-3.5" /> Tabela
               </button>
             </div>
-            <button
-              onClick={() => handleExportPdf(false)}
-              className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-3 py-2 text-xs font-medium hover:bg-muted"
-            >
-              <FileText className="h-3.5 w-3.5" />
-              PDF
-            </button>
-            <button
-              onClick={() => handleExportExcel(false)}
-              className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-3 py-2 text-xs font-medium hover:bg-muted"
-            >
-              <FileSpreadsheet className="h-3.5 w-3.5" />
-              Excel
-            </button>
           </div>
         </section>
 
@@ -866,18 +819,6 @@ function PortalPage() {
               {selected.size === 1 ? "referência selecionada" : "referências selecionadas"}
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <button
-                onClick={() => handleExportPdf(true)}
-                className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-3 py-2 text-xs font-medium hover:bg-muted"
-              >
-                <FileText className="h-3.5 w-3.5" /> PDF da seleção
-              </button>
-              <button
-                onClick={() => handleExportExcel(true)}
-                className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-3 py-2 text-xs font-medium hover:bg-muted"
-              >
-                <FileSpreadsheet className="h-3.5 w-3.5" /> Excel da seleção
-              </button>
               <button
                 onClick={handleShare}
                 className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-2 text-xs font-medium text-primary-foreground hover:opacity-90"
