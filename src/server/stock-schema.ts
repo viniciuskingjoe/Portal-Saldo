@@ -35,6 +35,20 @@ export const stockSqlSchema = {
       "TAMANHO_12",
     ],
   },
+  employeePolicy: {
+    productTable: { database: "PORTAL_CLIENTE", schema: "dbo", name: "B2B_PRODUTO" },
+    policyTable: { database: "PORTAL_CLIENTE", schema: "dbo", name: "B2B_POLITICA_COMERCIAL" },
+    columns: {
+      product: "PRODUTO",
+      color: "COR",
+      policyId: "ID_POLITICA_COMERCIAL",
+      accessType: "TIPO_ACESSO",
+      status: "STATUS",
+    },
+    // TIPO_ACESSO = 'F' (funcionario) e STATUS = 1 marcam o produto como funcionario.
+    accessTypeValue: "F",
+    activeStatus: 1,
+  },
   maxRows: 50000,
   onlyPositiveStock: true,
 } as const;
@@ -43,7 +57,12 @@ export function sqlIdentifier(value: string): string {
   return `[${value.replaceAll("]", "]]")}]`;
 }
 
-export function sqlTableName(table: { schema: string; name: string }): string {
-  const { schema, name } = table;
-  return `${sqlIdentifier(schema)}.${sqlIdentifier(name)}`;
+export function sqlTableName(table: { database?: string; schema: string; name: string }): string {
+  const { database, schema, name } = table;
+  const qualified = `${sqlIdentifier(schema)}.${sqlIdentifier(name)}`;
+  return database ? `${sqlIdentifier(database)}.${qualified}` : qualified;
+}
+
+export function sqlStringLiteral(value: string): string {
+  return `'${value.replaceAll("'", "''")}'`;
 }

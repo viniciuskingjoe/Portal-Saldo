@@ -1,7 +1,7 @@
 import type { Product } from "@/lib/stock-types";
 
 import { getSqlPool } from "./sql-server";
-import { sqlIdentifier, sqlTableName, stockSqlSchema } from "./stock-schema";
+import { sqlIdentifier, sqlStringLiteral, sqlTableName, stockSqlSchema } from "./stock-schema";
 
 type StockRow = {
   reference: unknown;
@@ -12,6 +12,7 @@ type StockRow = {
   grade: unknown;
   colorCode: unknown;
   colorDescription: unknown;
+  funcionario: unknown;
   sizes: unknown[];
   quantities: unknown[];
 };
@@ -43,6 +44,29 @@ function quantityColumn(index: number): string {
   return `e.${sqlIdentifier(stockSqlSchema.stockColumns.quantities[index])}`;
 }
 
+function buildEmployeeFlagColumn(): string {
+  const { employeePolicy } = stockSqlSchema;
+  const product = sqlTableName(employeePolicy.productTable);
+  const policy = sqlTableName(employeePolicy.policyTable);
+  const col = employeePolicy.columns;
+
+  // EXISTS evita multiplicar linhas do estoque quando o produto tem mais de uma politica.
+  // COLLATE DATABASE_DEFAULT alinha collation entre os bancos no join cross-database.
+  return `
+      CASE WHEN EXISTS (
+        SELECT 1
+        FROM ${product} p
+        JOIN ${policy} pc
+          ON p.${sqlIdentifier(col.policyId)} = pc.${sqlIdentifier(col.policyId)}
+        WHERE p.${sqlIdentifier(col.product)} COLLATE DATABASE_DEFAULT
+            = ${stockColumn("reference")} COLLATE DATABASE_DEFAULT
+          AND p.${sqlIdentifier(col.color)} COLLATE DATABASE_DEFAULT
+            = ${stockColumn("colorCode")} COLLATE DATABASE_DEFAULT
+          AND pc.${sqlIdentifier(col.accessType)} = ${sqlStringLiteral(employeePolicy.accessTypeValue)}
+          AND pc.${sqlIdentifier(col.status)} = ${employeePolicy.activeStatus}
+      ) THEN 1 ELSE 0 END AS [funcionario]`;
+}
+
 function buildStockQuery(): string {
   const quantityTotal = stockSqlSchema.stockColumns.quantities
     .map((_, index) => `ISNULL(${quantityColumn(index)}, 0)`)
@@ -66,6 +90,7 @@ function buildStockQuery(): string {
       ${stockColumn("grade")} AS [grade],
       ${stockColumn("colorCode")} AS [colorCode],
       ${stockColumn("colorDescription")} AS [colorDescription],
+      ${buildEmployeeFlagColumn()},
       ${sizeSelects},
       ${quantitySelects}
     FROM ${sqlTableName(stockSqlSchema.stockTable)} e
@@ -110,11 +135,14 @@ function mapRowsToProducts(rows: StockRow[]): Product[] {
         subgroup: text(row.subgroup, "Sem subgrupo"),
         collection: text(row.collection, "Sem colecao"),
         brand: text(row.brand, "Sem griffe"),
+        funcionario: false,
         totalQuantity: 0,
         colors: [],
       };
       products.set(reference, product);
     }
+
+    if (number(row.funcionario) === 1) product.funcionario = true;
 
     const code = text(row.colorCode);
     const description = text(row.colorDescription);

@@ -12,6 +12,7 @@ export interface Product {
   subgroup: string;
   collection: string;
   brand: string;
+  funcionario: boolean;
   imageUrl?: string;
   totalQuantity: number;
   colors: ColorStock[];

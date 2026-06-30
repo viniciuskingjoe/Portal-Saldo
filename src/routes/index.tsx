@@ -1344,6 +1344,16 @@ function ProductCard({
                   {product.subgroup}
                 </span>
               </div>
+              <label className="mt-2 inline-flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
+                <input
+                  type="checkbox"
+                  checked={product.funcionario}
+                  readOnly
+                  className="pointer-events-none h-3.5 w-3.5 accent-black"
+                  aria-label={`Produto ${product.funcionario ? "" : "nao "}disponivel para funcionario`}
+                />
+                Funcionário
+              </label>
             </div>
             <div className="shrink-0 text-right">
               <div className="text-[10px] font-semibold tracking-wider text-muted-foreground uppercase">
