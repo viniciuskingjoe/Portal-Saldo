@@ -12,7 +12,6 @@ import {
   LayoutList,
   RefreshCw,
   Search,
-  Trash2,
   X,
 } from "lucide-react";
 
@@ -263,7 +262,6 @@ function PortalPage() {
   });
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(24);
-  const [selected, setSelected] = useState<Set<string>>(new Set());
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [openFilter, setOpenFilter] = useState<FilterKey | null>(null);
   const [filterSearch, setFilterSearch] = useState("");
@@ -442,26 +440,6 @@ function PortalPage() {
     }
     return { refs, pieces, brands: brandSet.size, collections: colSet.size };
   }, [filtered]);
-
-  // Selection
-  const toggleSelect = (ref: string) => {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(ref)) next.delete(ref);
-      else next.add(ref);
-      return next;
-    });
-  };
-  const toggleSelectPage = () => {
-    const allPageSelected = pageItems.every((p) => selected.has(p.reference));
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (allPageSelected) pageItems.forEach((p) => next.delete(p.reference));
-      else pageItems.forEach((p) => next.add(p.reference));
-      return next;
-    });
-  };
-  const clearSelection = () => setSelected(new Set());
 
   const activeFilterCount =
     filters.brands.length +
@@ -727,8 +705,6 @@ function PortalPage() {
               <ProductCard
                 key={p.reference}
                 product={p}
-                selected={selected.has(p.reference)}
-                onToggle={() => toggleSelect(p.reference)}
                 onEditImage={() => setEditingImageRef(p.reference)}
                 onViewImage={() => {
                   if (p.imageUrl) setViewingImageRef(p.reference);
@@ -740,9 +716,6 @@ function PortalPage() {
         ) : (
           <ProductTable
             items={pageItems}
-            selected={selected}
-            onToggle={toggleSelect}
-            onTogglePage={toggleSelectPage}
             expandedRow={expandedRow}
             setExpandedRow={setExpandedRow}
             onEditImage={setEditingImageRef}
@@ -794,27 +767,6 @@ function PortalPage() {
           </div>
         )}
       </main>
-
-      {/* Selection bar */}
-      {selected.size > 0 && (
-        <div className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-background/95 px-4 py-3 backdrop-blur sm:px-6">
-          <div className="mx-auto flex max-w-[1600px] flex-wrap items-center justify-between gap-3">
-            <div className="text-sm">
-              <span className="font-semibold">{selected.size}</span>{" "}
-              {selected.size === 1 ? "referência selecionada" : "referências selecionadas"}
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                onClick={clearSelection}
-                className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-3 py-2 text-xs font-medium hover:bg-muted"
-                aria-label="Limpar seleção"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {editingImageProduct && (
         <ProductImageDialog
@@ -1196,25 +1148,17 @@ function ProductImageDialog({
 
 function ProductCard({
   product,
-  selected,
-  onToggle,
   onEditImage,
   onViewImage,
 }: {
   product: Product;
-  selected: boolean;
-  onToggle: () => void;
   onEditImage: () => void;
   onViewImage: () => void;
 }) {
   const allSizes = useMemo(() => availableSizes(product), [product]);
 
   return (
-    <article
-      className={`overflow-hidden rounded-lg border bg-card transition ${
-        selected ? "border-foreground ring-1 ring-foreground" : "border-border"
-      }`}
-    >
+    <article className="overflow-hidden rounded-lg border border-border bg-card transition">
       <div className="grid grid-cols-1 md:h-[340px] md:grid-cols-[220px_minmax(0,1fr)]">
         <div className="relative h-64 bg-muted md:h-full">
           <button
@@ -1237,15 +1181,6 @@ function ProductCard({
               className="h-full w-full"
             />
           </button>
-          <label className="absolute top-3 left-3 z-10 inline-flex h-6 w-6 cursor-pointer items-center justify-center rounded border border-border bg-background/95 shadow-sm">
-            <input
-              type="checkbox"
-              checked={selected}
-              onChange={onToggle}
-              className="h-4 w-4 accent-black"
-              aria-label={`Selecionar ${product.reference}`}
-            />
-          </label>
         </div>
 
         <div className="flex min-h-0 min-w-0 flex-col gap-3 p-4 sm:p-5">
@@ -1333,38 +1268,22 @@ function ProductCard({
 
 function ProductTable({
   items,
-  selected,
-  onToggle,
-  onTogglePage,
   expandedRow,
   setExpandedRow,
   onEditImage,
   onViewImage,
 }: {
   items: Product[];
-  selected: Set<string>;
-  onToggle: (ref: string) => void;
-  onTogglePage: () => void;
   expandedRow: string | null;
   setExpandedRow: (r: string | null) => void;
   onEditImage: (ref: string) => void;
   onViewImage: (ref: string) => void;
 }) {
-  const allPageSelected = items.length > 0 && items.every((p) => selected.has(p.reference));
   return (
     <div className="overflow-x-auto rounded-lg border border-border bg-card">
       <table className="w-full min-w-[860px] text-sm">
         <thead className="bg-muted text-xs uppercase tracking-wider text-muted-foreground">
           <tr>
-            <th className="w-10 p-3">
-              <input
-                type="checkbox"
-                checked={allPageSelected}
-                onChange={onTogglePage}
-                className="h-4 w-4 accent-black"
-                aria-label="Selecionar todos da página"
-              />
-            </th>
             <th className="w-8 p-3"></th>
             <th className="w-24 p-3 text-left font-semibold">Imagem</th>
             <th className="p-3 text-left font-semibold">Referência</th>
@@ -1378,21 +1297,10 @@ function ProductTable({
         <tbody>
           {items.map((p) => {
             const expanded = expandedRow === p.reference;
-            const isSel = selected.has(p.reference);
             const allSizes = availableSizes(p);
             return (
               <Fragment key={p.reference}>
-                <tr
-                  className={`border-t border-border ${isSel ? "bg-muted/60" : ""}`}
-                >
-                  <td className="p-3">
-                    <input
-                      type="checkbox"
-                      checked={isSel}
-                      onChange={() => onToggle(p.reference)}
-                      className="h-4 w-4 accent-black"
-                    />
-                  </td>
+                <tr className="border-t border-border">
                   <td className="p-3">
                     <button
                       onClick={() => setExpandedRow(expanded ? null : p.reference)}
@@ -1441,7 +1349,7 @@ function ProductTable({
                 </tr>
                 {expanded && (
                   <tr className="border-t border-border bg-muted/30">
-                    <td colSpan={9} className="p-4">
+                    <td colSpan={8} className="p-4">
                       <div className="overflow-x-auto">
                         <table className="w-full min-w-max text-xs">
                           <thead>
