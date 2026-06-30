@@ -1,5 +1,7 @@
 import "./lib/error-capture";
 
+import { handleImageProxyRequest } from "./server/image-proxy";
+import { handleStockApiRequest } from "./server/stock-api";
 import { consumeLastCapturedError } from "./lib/error-capture";
 import { renderErrorPage } from "./lib/error-page";
 
@@ -40,6 +42,12 @@ async function normalizeCatastrophicSsrResponse(response: Response): Promise<Res
 export default {
   async fetch(request: Request, env: unknown, ctx: unknown) {
     try {
+      const imageResponse = await handleImageProxyRequest(request);
+      if (imageResponse) return imageResponse;
+
+      const apiResponse = await handleStockApiRequest(request);
+      if (apiResponse) return apiResponse;
+
       const handler = await getServerEntry();
       const response = await handler.fetch(request, env, ctx);
       return await normalizeCatastrophicSsrResponse(response);

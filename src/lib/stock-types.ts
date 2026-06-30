@@ -1,4 +1,6 @@
 export interface ColorStock {
+  code: string;
+  description: string;
   name: string;
   total: number;
   sizes: Record<string, number>;
@@ -10,10 +12,7 @@ export interface Product {
   subgroup: string;
   collection: string;
   brand: string;
-  composition: string;
-  sellIn: number;
-  sellOut: number;
-  imageUrl: string;
+  imageUrl?: string;
   totalQuantity: number;
   colors: ColorStock[];
 }
@@ -28,11 +27,7 @@ export type SortKey =
   | "desc_asc"
   | "collection"
   | "subgroup"
-  | "brand"
-  | "sellin_desc"
-  | "sellin_asc"
-  | "sellout_desc"
-  | "sellout_asc";
+  | "brand";
 
 export interface Filters {
   search: string;
@@ -40,7 +35,4 @@ export interface Filters {
   collections: string[];
   subgroups: string[];
   colors: string[];
-  sizes: string[];
-  minQty: number | null;
-  maxQty: number | null;
 }

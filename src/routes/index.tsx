@@ -1,12 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   Check,
   ChevronDown,
   ChevronRight,
-  Copy,
-  Download,
   FileSpreadsheet,
   FileText,
   Filter,
@@ -22,9 +20,9 @@ import {
 } from "lucide-react";
 
 import { Toaster } from "@/components/ui/sonner";
-import { generateMockStock } from "@/lib/mock-stock";
 import type { Filters, Product, SortKey, ViewMode } from "@/lib/stock-types";
-import { formatBRL, formatNum, formatTime } from "@/lib/format";
+import { DRIVE_IMAGE_MAP, DRIVE_IMAGE_MAP_BY_BRAND } from "@/lib/drive-image-map";
+import { formatNum, formatTime } from "@/lib/format";
 import { exportToExcel, exportToPdf } from "@/lib/exporters";
 
 export const Route = createFileRoute("/")({
@@ -52,10 +50,6 @@ const SORT_LABELS: Record<SortKey, string> = {
   collection: "Coleção",
   subgroup: "Subgrupo",
   brand: "Griffe",
-  sellin_desc: "Maior Sell In",
-  sellin_asc: "Menor Sell In",
-  sellout_desc: "Maior Sell Out",
-  sellout_asc: "Menor Sell Out",
 };
 
 const EMPTY_FILTERS: Filters = {
@@ -64,10 +58,40 @@ const EMPTY_FILTERS: Filters = {
   collections: [],
   subgroups: [],
   colors: [],
-  sizes: [],
-  minQty: null,
-  maxQty: null,
 };
+
+const IMAGE_STORAGE_KEY = "psv-product-images";
+
+type FilterKey = "brands" | "collections" | "subgroups" | "colors";
+
+const FILTERS: Array<{
+  key: FilterKey;
+  label: string;
+  placeholder: string;
+}> = [
+  { key: "brands", label: "Griffe", placeholder: "Buscar griffe..." },
+  { key: "collections", label: "Coleção", placeholder: "Buscar coleção..." },
+  { key: "subgroups", label: "Subgrupo", placeholder: "Buscar subgrupo..." },
+  { key: "colors", label: "Cor", placeholder: "Digite código ou descrição..." },
+];
+
+type StockApiResponse = {
+  products: Product[];
+  updatedAt: string;
+};
+
+type ConnectionStatus = "loading" | "connected" | "error";
+
+function isStockApiResponse(value: unknown): value is StockApiResponse {
+  if (value == null || typeof value !== "object") return false;
+  const payload = value as Partial<StockApiResponse>;
+  return Array.isArray(payload.products) && typeof payload.updatedAt === "string";
+}
+
+function parseApiDate(value: string): Date {
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+}
 
 function sortProducts(items: Product[], sort: SortKey): Product[] {
   const arr = [...items];
@@ -81,10 +105,6 @@ function sortProducts(items: Product[], sort: SortKey): Product[] {
       case "collection": return a.collection.localeCompare(b.collection);
       case "subgroup": return a.subgroup.localeCompare(b.subgroup);
       case "brand": return a.brand.localeCompare(b.brand);
-      case "sellin_desc": return b.sellIn - a.sellIn;
-      case "sellin_asc": return a.sellIn - b.sellIn;
-      case "sellout_desc": return b.sellOut - a.sellOut;
-      case "sellout_asc": return a.sellOut - b.sellOut;
     }
   });
   return arr;
@@ -99,25 +119,145 @@ function applyFilters(items: Product[], f: Filters): Product[] {
     if (f.collections.length && !f.collections.includes(p.collection)) return false;
     if (f.subgroups.length && !f.subgroups.includes(p.subgroup)) return false;
     if (f.colors.length && !p.colors.some((c) => f.colors.includes(c.name))) return false;
-    if (f.sizes.length) {
-      const available = new Set<string>();
-      for (const c of p.colors) {
-        for (const [sz, qty] of Object.entries(c.sizes)) {
-          if (qty > 0) available.add(sz);
-        }
-      }
-      if (!f.sizes.some((s) => available.has(s))) return false;
-    }
-    if (f.minQty != null && p.totalQuantity < f.minQty) return false;
-    if (f.maxQty != null && p.totalQuantity > f.maxQty) return false;
     return true;
   });
 }
 
+function sortSizeLabels(a: string, b: string): number {
+  const na = Number(a);
+  const nb = Number(b);
+  if (!isNaN(na) && !isNaN(nb)) return na - nb;
+  return a.localeCompare(b);
+}
+
+function availableSizes(product: Product): string[] {
+  const sizes = new Set<string>();
+  for (const color of product.colors) {
+    for (const [size, quantity] of Object.entries(color.sizes)) {
+      if (size.trim() && quantity > 0) sizes.add(size);
+    }
+  }
+  return [...sizes].sort(sortSizeLabels);
+}
+
+function extractUnsplashPhotoId(parsed: URL): string | null {
+  const host = parsed.hostname.toLowerCase().replace(/^www\./, "");
+  if (host !== "unsplash.com") return null;
+
+  const segments = parsed.pathname
+    .split("/")
+    .map((segment) => segment.trim())
+    .filter(Boolean);
+  const isPhotoPage =
+    segments.includes("photos") ||
+    segments.includes("fotografias") ||
+    segments.includes("fotos");
+  if (!isPhotoPage) return null;
+
+  const lastSegment = segments.at(-1);
+  if (!lastSegment) return null;
+
+  const exactId = lastSegment.match(/^[A-Za-z0-9_-]{11}$/);
+  if (exactId) return lastSegment;
+
+  const trailingId = lastSegment.slice(-11);
+  return /^[A-Za-z0-9_-]{11}$/.test(trailingId) ? trailingId : null;
+}
+
+function extractGoogleDriveFileId(parsed: URL): string | null {
+  const host = parsed.hostname.toLowerCase().replace(/^www\./, "");
+  if (host !== "drive.google.com" && host !== "docs.google.com") return null;
+
+  const id = parsed.searchParams.get("id");
+  if (id) return id;
+
+  const segments = parsed.pathname
+    .split("/")
+    .map((segment) => segment.trim())
+    .filter(Boolean);
+  const fileIndex = segments.indexOf("file");
+
+  if (fileIndex >= 0 && segments[fileIndex + 1] === "d" && segments[fileIndex + 2]) {
+    return segments[fileIndex + 2];
+  }
+
+  return null;
+}
+
+function normalizeImageUrl(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+
+  try {
+    const parsed = new URL(trimmed);
+    const driveFileId = extractGoogleDriveFileId(parsed);
+    if (driveFileId) {
+      return `https://drive.google.com/thumbnail?id=${driveFileId}&sz=w1200`;
+    }
+
+    const unsplashPhotoId = extractUnsplashPhotoId(parsed);
+    if (unsplashPhotoId) {
+      return `https://unsplash.com/photos/${unsplashPhotoId}/download?force=true&w=1200`;
+    }
+  } catch {
+    return trimmed;
+  }
+
+  return trimmed;
+}
+
+function imageLookupKey(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function referenceLookupKeys(reference: string): string[] {
+  const normalized = reference.trim().toUpperCase();
+  return [...new Set([normalized, normalized.replace(/\./g, "")])].filter(Boolean);
+}
+
+function getDriveImageUrl(product: Product): string | undefined {
+  const brandMap = DRIVE_IMAGE_MAP_BY_BRAND[imageLookupKey(product.brand)];
+  for (const reference of referenceLookupKeys(product.reference)) {
+    const imageUrl = brandMap?.[reference] ?? DRIVE_IMAGE_MAP[reference];
+    if (imageUrl) return imageUrl;
+  }
+
+  return undefined;
+}
+
+function proxiedDisplayImageUrl(src?: string): string | undefined {
+  const trimmed = src?.trim();
+  if (!trimmed) return undefined;
+  if (trimmed.startsWith("/")) return trimmed;
+
+  try {
+    const parsed = new URL(trimmed);
+    if (!["http:", "https:"].includes(parsed.protocol)) return trimmed;
+
+    const host = parsed.hostname.toLowerCase();
+    if (host === "localhost" || host === "127.0.0.1" || host === "::1") {
+      return trimmed;
+    }
+
+    return `/api/image?url=${encodeURIComponent(parsed.toString())}`;
+  } catch {
+    return trimmed;
+  }
+}
+
 function PortalPage() {
-  const [allProducts, setAllProducts] = useState<Product[]>(() => generateMockStock(120));
-  const [loading, setLoading] = useState(false);
-  const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
+  const resultsTopRef = useRef<HTMLDivElement | null>(null);
+  const didRenderPageRef = useRef(false);
+  const [allProducts, setAllProducts] = useState<Product[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>("loading");
+  const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
   const [searchInput, setSearchInput] = useState("");
   const [sort, setSort] = useState<SortKey>("stock_desc");
@@ -129,14 +269,94 @@ function PortalPage() {
   const [pageSize, setPageSize] = useState(24);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const [editingImageRef, setEditingImageRef] = useState<string | null>(null);
+  const [openFilter, setOpenFilter] = useState<FilterKey | null>(null);
+  const [filterSearch, setFilterSearch] = useState("");
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
-  const [imageCache, setImageCache] = useState<Record<string, string>>({});
+  const [viewingImageRef, setViewingImageRef] = useState<string | null>(null);
+  const [imageMap, setImageMap] = useState<Record<string, string>>(() => {
+    if (typeof window === "undefined") return {};
+    try {
+      const value = localStorage.getItem(IMAGE_STORAGE_KEY);
+      return value ? (JSON.parse(value) as Record<string, string>) : {};
+    } catch {
+      return {};
+    }
+  });
+  const [editingImageRef, setEditingImageRef] = useState<string | null>(null);
+
+  const loadStock = useCallback(async (silent = false) => {
+    setLoading(true);
+    setConnectionStatus((current) => (current === "connected" ? current : "loading"));
+
+    try {
+      const response = await fetch("/api/stock", {
+        headers: {
+          accept: "application/json",
+        },
+      });
+      const payload: unknown = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        const message =
+          payload != null && typeof payload === "object" && "message" in payload
+            ? String((payload as { message?: unknown }).message)
+            : "Nao foi possivel consultar o SQL Server.";
+        throw new Error(message);
+      }
+
+      if (!isStockApiResponse(payload)) {
+        throw new Error("A API de estoque retornou um formato inesperado.");
+      }
+
+      setAllProducts(payload.products);
+      setLastUpdate(parseApiDate(payload.updatedAt));
+      setConnectionStatus("connected");
+      if (!silent) toast.success("Estoque atualizado.");
+    } catch (error) {
+      console.error(error);
+      setConnectionStatus("error");
+      if (!silent) {
+        toast.error(
+          error instanceof Error
+            ? error.message
+            : "Nao foi possivel consultar o SQL Server.",
+        );
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   // Persist view
   useEffect(() => {
     localStorage.setItem("psv-view", view);
   }, [view]);
+
+  useEffect(() => {
+    localStorage.setItem(IMAGE_STORAGE_KEY, JSON.stringify(imageMap));
+  }, [imageMap]);
+
+  useEffect(() => {
+    if (!filtersOpen) {
+      setOpenFilter(null);
+      setFilterSearch("");
+    }
+  }, [filtersOpen]);
+
+  useEffect(() => {
+    if (!viewingImageRef) return;
+
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setViewingImageRef(null);
+    };
+
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [viewingImageRef]);
+
+  useEffect(() => {
+    void loadStock(true);
+  }, [loadStock]);
 
   // Debounce search
   useEffect(() => {
@@ -150,27 +370,24 @@ function PortalPage() {
   // Auto refresh every 30s
   useEffect(() => {
     const id = setInterval(() => {
-      setLastUpdate(new Date());
+      void loadStock(true);
     }, 30000);
     return () => clearInterval(id);
-  }, []);
+  }, [loadStock]);
 
   const refresh = () => {
-    setLoading(true);
-    setTimeout(() => {
-      setLastUpdate(new Date());
-      setLoading(false);
-      toast.success("Estoque atualizado.");
-    }, 600);
+    void loadStock();
   };
+  const lastUpdateText = lastUpdate ? formatTime(lastUpdate) : "--:--:--";
 
-  // Apply image overrides
   const products = useMemo(
     () =>
-      allProducts.map((p) =>
-        imageCache[p.reference] ? { ...p, imageUrl: imageCache[p.reference] } : p,
-      ),
-    [allProducts, imageCache],
+      allProducts.map((product) => {
+        const imageUrl =
+          imageMap[product.reference] ?? product.imageUrl ?? getDriveImageUrl(product);
+        return imageUrl ? { ...product, imageUrl } : product;
+      }),
+    [allProducts, imageMap],
   );
 
   // Distinct filter options
@@ -179,14 +396,12 @@ function PortalPage() {
     const collections = new Set<string>();
     const subgroups = new Set<string>();
     const colors = new Set<string>();
-    const sizes = new Set<string>();
     for (const p of products) {
       brands.add(p.brand);
       collections.add(p.collection);
       subgroups.add(p.subgroup);
       for (const c of p.colors) {
         colors.add(c.name);
-        for (const sz of Object.keys(c.sizes)) sizes.add(sz);
       }
     }
     return {
@@ -194,11 +409,6 @@ function PortalPage() {
       collections: [...collections].sort(),
       subgroups: [...subgroups].sort(),
       colors: [...colors].sort(),
-      sizes: [...sizes].sort((a, b) => {
-        const na = Number(a), nb = Number(b);
-        if (!isNaN(na) && !isNaN(nb)) return na - nb;
-        return a.localeCompare(b);
-      }),
     };
   }, [products]);
 
@@ -208,6 +418,20 @@ function PortalPage() {
   const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize));
   const currentPage = Math.min(page, totalPages);
   const pageItems = sorted.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
+  useEffect(() => {
+    if (page !== currentPage) setPage(currentPage);
+  }, [currentPage, page]);
+
+  useEffect(() => {
+    if (!didRenderPageRef.current) {
+      didRenderPageRef.current = true;
+      return;
+    }
+
+    setExpandedRow(null);
+    resultsTopRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [currentPage, pageSize]);
 
   // Dashboard
   const summary = useMemo(() => {
@@ -248,17 +472,29 @@ function PortalPage() {
     [products, selected],
   );
 
-  const handleExportPdf = (onlySelected: boolean) => {
+  const handleExportPdf = async (onlySelected: boolean) => {
     const list = onlySelected ? selectedProducts : sorted;
     if (!list.length) return toast.error("Nenhum produto para exportar.");
-    exportToPdf(list);
-    toast.success("PDF gerado com sucesso.");
+    const toastId = toast.loading("Gerando PDF...");
+    try {
+      await exportToPdf(list);
+      toast.success("PDF gerado com sucesso.", { id: toastId });
+    } catch (error) {
+      console.error(error);
+      toast.error("Não foi possível gerar o PDF.", { id: toastId });
+    }
   };
-  const handleExportExcel = (onlySelected: boolean) => {
+  const handleExportExcel = async (onlySelected: boolean) => {
     const list = onlySelected ? selectedProducts : sorted;
     if (!list.length) return toast.error("Nenhum produto para exportar.");
-    exportToExcel(list);
-    toast.success("Planilha exportada com sucesso.");
+    const toastId = toast.loading("Gerando Excel...");
+    try {
+      await exportToExcel(list);
+      toast.success("Planilha exportada com sucesso.", { id: toastId });
+    } catch (error) {
+      console.error(error);
+      toast.error("Não foi possível gerar a planilha.", { id: toastId });
+    }
   };
 
   const handleShare = () => {
@@ -269,7 +505,6 @@ function PortalPage() {
     if (filters.collections.length) params.set("collections", filters.collections.join(","));
     if (filters.subgroups.length) params.set("subgroups", filters.subgroups.join(","));
     if (filters.colors.length) params.set("colors", filters.colors.join(","));
-    if (filters.sizes.length) params.set("sizes", filters.sizes.join(","));
     const url = `${window.location.origin}/?${params.toString()}`;
     navigator.clipboard.writeText(url).then(() => {
       toast.success("Link da seleção copiado com sucesso.");
@@ -280,10 +515,7 @@ function PortalPage() {
     filters.brands.length +
     filters.collections.length +
     filters.subgroups.length +
-    filters.colors.length +
-    filters.sizes.length +
-    (filters.minQty != null ? 1 : 0) +
-    (filters.maxQty != null ? 1 : 0);
+    filters.colors.length;
 
   const toggleArr = (key: keyof Filters, val: string) => {
     setFilters((f) => {
@@ -300,7 +532,20 @@ function PortalPage() {
     setPage(1);
   };
 
-  const editingProduct = products.find((p) => p.reference === editingImageRef) ?? null;
+  const editingImageProduct = products.find((product) => product.reference === editingImageRef);
+  const viewingImageProduct = products.find((product) => product.reference === viewingImageRef);
+
+  const saveProductImage = (reference: string, imageUrl: string) => {
+    setImageMap((current) => {
+      const next = { ...current };
+      const trimmed = normalizeImageUrl(imageUrl);
+      if (trimmed) next[reference] = trimmed;
+      else delete next[reference];
+      return next;
+    });
+    setEditingImageRef(null);
+    toast.success(imageUrl.trim() ? "Imagem salva." : "Imagem removida.");
+  };
 
   return (
     <div className="min-h-screen bg-background pb-32">
@@ -322,11 +567,21 @@ function PortalPage() {
               <div className="hidden items-center gap-2 rounded-full border border-border px-3 py-1.5 text-xs sm:flex">
                 <span
                   className={`h-2 w-2 rounded-full ${
-                    loading ? "animate-pulse bg-muted-foreground" : "bg-foreground"
+                    loading
+                      ? "animate-pulse bg-muted-foreground"
+                      : connectionStatus === "connected"
+                        ? "bg-foreground"
+                        : "bg-red-500"
                   }`}
                 />
-                <span className="font-medium">{loading ? "Atualizando" : "Conectado"}</span>
-                <span className="text-muted-foreground">· {formatTime(lastUpdate)}</span>
+                <span className="font-medium">
+                  {loading
+                    ? "Atualizando"
+                    : connectionStatus === "connected"
+                      ? "SQL Server"
+                      : "Banco offline"}
+                </span>
+                <span className="text-muted-foreground">· {lastUpdateText}</span>
               </div>
               <button
                 onClick={refresh}
@@ -350,7 +605,7 @@ function PortalPage() {
           <SummaryCard label="Coleções" value={formatNum(summary.collections)} />
           <SummaryCard
             label="Última atualização"
-            value={formatTime(lastUpdate)}
+            value={lastUpdateText}
             small
           />
         </section>
@@ -406,69 +661,25 @@ function PortalPage() {
           </div>
 
           {filtersOpen && (
-            <div className="mt-3 rounded-lg border border-border bg-card p-4">
-              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                <FilterChips
-                  label="Griffe"
-                  options={opts.brands}
-                  selected={filters.brands}
-                  onToggle={(v) => toggleArr("brands", v)}
-                />
-                <FilterChips
-                  label="Coleção"
-                  options={opts.collections}
-                  selected={filters.collections}
-                  onToggle={(v) => toggleArr("collections", v)}
-                />
-                <FilterChips
-                  label="Subgrupo"
-                  options={opts.subgroups}
-                  selected={filters.subgroups}
-                  onToggle={(v) => toggleArr("subgroups", v)}
-                />
-                <FilterChips
-                  label="Cor"
-                  options={opts.colors}
-                  selected={filters.colors}
-                  onToggle={(v) => toggleArr("colors", v)}
-                />
-                <FilterChips
-                  label="Tamanho disponível"
-                  options={opts.sizes}
-                  selected={filters.sizes}
-                  onToggle={(v) => toggleArr("sizes", v)}
-                />
-                <div>
-                  <div className="mb-2 text-xs font-semibold tracking-wider text-muted-foreground uppercase">
-                    Quantidade total
-                  </div>
-                  <div className="flex gap-2">
-                    <input
-                      type="number"
-                      min={0}
-                      placeholder="Mín."
-                      value={filters.minQty ?? ""}
-                      onChange={(e) => {
-                        const v = e.target.value === "" ? null : Number(e.target.value);
-                        setFilters((f) => ({ ...f, minQty: v }));
-                        setPage(1);
-                      }}
-                      className="w-1/2 rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-foreground"
-                    />
-                    <input
-                      type="number"
-                      min={0}
-                      placeholder="Máx."
-                      value={filters.maxQty ?? ""}
-                      onChange={(e) => {
-                        const v = e.target.value === "" ? null : Number(e.target.value);
-                        setFilters((f) => ({ ...f, maxQty: v }));
-                        setPage(1);
-                      }}
-                      className="w-1/2 rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-foreground"
-                    />
-                  </div>
-                </div>
+            <div className="mt-3 rounded-lg border border-border bg-card p-3">
+              <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+                {FILTERS.map((filter) => (
+                  <FilterDropdown
+                    key={filter.key}
+                    label={filter.label}
+                    options={opts[filter.key]}
+                    selected={filters[filter.key]}
+                    open={openFilter === filter.key}
+                    search={openFilter === filter.key ? filterSearch : ""}
+                    placeholder={filter.placeholder}
+                    onOpenChange={(open) => {
+                      setOpenFilter(open ? filter.key : null);
+                      setFilterSearch("");
+                    }}
+                    onSearchChange={setFilterSearch}
+                    onToggle={(value) => toggleArr(filter.key, value)}
+                  />
+                ))}
               </div>
             </div>
           )}
@@ -487,15 +698,6 @@ function PortalPage() {
               {filters.colors.map((v) => (
                 <Chip key={`co-${v}`} label={v} onRemove={() => toggleArr("colors", v)} />
               ))}
-              {filters.sizes.map((v) => (
-                <Chip key={`sz-${v}`} label={`Tam. ${v}`} onRemove={() => toggleArr("sizes", v)} />
-              ))}
-              {filters.minQty != null && (
-                <Chip label={`Mín. ${filters.minQty}`} onRemove={() => setFilters((f) => ({ ...f, minQty: null }))} />
-              )}
-              {filters.maxQty != null && (
-                <Chip label={`Máx. ${filters.maxQty}`} onRemove={() => setFilters((f) => ({ ...f, maxQty: null }))} />
-              )}
             </div>
           )}
         </section>
@@ -554,6 +756,7 @@ function PortalPage() {
         </section>
 
         {/* Results */}
+        <div ref={resultsTopRef} className="scroll-mt-28" />
         {pageItems.length === 0 ? (
           <EmptyState
             title={activeFilterCount || filters.search ? "Nenhuma referência encontrada." : "Nenhum produto disponível."}
@@ -589,6 +792,10 @@ function PortalPage() {
                 selected={selected.has(p.reference)}
                 onToggle={() => toggleSelect(p.reference)}
                 onEditImage={() => setEditingImageRef(p.reference)}
+                onViewImage={() => {
+                  if (p.imageUrl) setViewingImageRef(p.reference);
+                  else setEditingImageRef(p.reference);
+                }}
               />
             ))}
           </div>
@@ -598,9 +805,14 @@ function PortalPage() {
             selected={selected}
             onToggle={toggleSelect}
             onTogglePage={toggleSelectPage}
-            onEditImage={(r) => setEditingImageRef(r)}
             expandedRow={expandedRow}
             setExpandedRow={setExpandedRow}
+            onEditImage={setEditingImageRef}
+            onViewImage={(reference) => {
+              const product = products.find((item) => item.reference === reference);
+              if (product?.imageUrl) setViewingImageRef(reference);
+              else setEditingImageRef(reference);
+            }}
           />
         )}
 
@@ -613,14 +825,14 @@ function PortalPage() {
             <div className="flex items-center justify-center gap-1">
               <button
                 disabled={currentPage === 1}
-                onClick={() => setPage((p) => p - 1)}
+                onClick={() => setPage(Math.max(1, currentPage - 1))}
                 className="rounded-md border border-border px-3 py-1.5 text-xs disabled:opacity-40"
               >
                 Anterior
               </button>
               <button
                 disabled={currentPage === totalPages}
-                onClick={() => setPage((p) => p + 1)}
+                onClick={() => setPage(Math.min(totalPages, currentPage + 1))}
                 className="rounded-md border border-border px-3 py-1.5 text-xs disabled:opacity-40"
               >
                 Próxima
@@ -684,15 +896,21 @@ function PortalPage() {
         </div>
       )}
 
-      {/* Image edit dialog */}
-      {editingProduct && (
-        <ImageEditDialog
-          product={editingProduct}
+      {editingImageProduct && (
+        <ProductImageDialog
+          product={editingImageProduct}
           onClose={() => setEditingImageRef(null)}
-          onSave={(url) => {
-            setImageCache((c) => ({ ...c, [editingProduct.reference]: url }));
-            setEditingImageRef(null);
-            toast.success("Imagem da referência atualizada com sucesso.");
+          onSave={(imageUrl) => saveProductImage(editingImageProduct.reference, imageUrl)}
+        />
+      )}
+
+      {viewingImageProduct?.imageUrl && (
+        <ProductImageViewerDialog
+          product={viewingImageProduct}
+          onClose={() => setViewingImageRef(null)}
+          onEditImage={() => {
+            setViewingImageRef(null);
+            setEditingImageRef(viewingImageProduct.reference);
           }}
         />
       )}
@@ -725,66 +943,334 @@ function Chip({ label, onRemove }: { label: string; onRemove: () => void }) {
   );
 }
 
-function FilterChips({
+function FilterDropdown({
   label,
   options,
   selected,
+  open,
+  search,
+  placeholder,
+  onOpenChange,
+  onSearchChange,
   onToggle,
 }: {
   label: string;
   options: string[];
   selected: string[];
+  open: boolean;
+  search: string;
+  placeholder: string;
+  onOpenChange: (open: boolean) => void;
+  onSearchChange: (value: string) => void;
   onToggle: (v: string) => void;
 }) {
+  const normalizedSearch = search.trim().toLowerCase();
+  const filteredOptions = normalizedSearch
+    ? options.filter((option) => option.toLowerCase().includes(normalizedSearch))
+    : options;
+
   return (
-    <div>
-      <div className="mb-2 text-xs font-semibold tracking-wider text-muted-foreground uppercase">
-        {label}
-      </div>
-      <div className="flex flex-wrap gap-1.5">
-        {options.map((o) => {
-          const on = selected.includes(o);
-          return (
-            <button
-              key={o}
-              onClick={() => onToggle(o)}
-              className={`rounded-full border px-2.5 py-1 text-xs font-medium transition ${
-                on
-                  ? "border-foreground bg-primary text-primary-foreground"
-                  : "border-border bg-background hover:bg-muted"
-              }`}
-            >
-              {on && <Check className="mr-1 inline h-3 w-3" />}
-              {o}
-            </button>
-          );
-        })}
-      </div>
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => onOpenChange(!open)}
+        className={`flex h-10 w-full items-center justify-between gap-2 rounded-md border px-3 text-sm font-medium transition ${
+          open ? "border-foreground bg-background" : "border-border bg-background hover:bg-muted"
+        }`}
+      >
+        <span className="truncate">{label}</span>
+        <span className="flex items-center gap-2">
+          {selected.length > 0 && (
+            <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[11px] font-semibold text-primary-foreground">
+              {selected.length}
+            </span>
+          )}
+          <ChevronDown className={`h-4 w-4 transition ${open ? "rotate-180" : ""}`} />
+        </span>
+      </button>
+
+      {open && (
+        <div className="absolute left-0 z-40 mt-1 w-full min-w-72 rounded-md border border-border bg-background shadow-lg">
+          <div className="relative border-b border-border">
+            <Search className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <input
+              value={search}
+              onChange={(event) => onSearchChange(event.target.value)}
+              placeholder={placeholder}
+              autoFocus
+              className="h-10 w-full rounded-t-md bg-background pr-3 pl-9 text-sm outline-none"
+            />
+          </div>
+
+          <div className="max-h-72 overflow-y-auto p-1">
+            {filteredOptions.map((option) => {
+              const on = selected.includes(option);
+              return (
+                <button
+                  type="button"
+                  key={option}
+                  onClick={() => onToggle(option)}
+                  className={`flex w-full items-center gap-2 rounded px-2 py-2 text-left text-sm transition ${
+                    on ? "bg-muted font-semibold" : "hover:bg-muted"
+                  }`}
+                >
+                  <span
+                    className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
+                      on ? "border-foreground bg-primary text-primary-foreground" : "border-border"
+                    }`}
+                  >
+                    {on && <Check className="h-3 w-3" />}
+                  </span>
+                  <span className="truncate">{option}</span>
+                </button>
+              );
+            })}
+            {filteredOptions.length === 0 && (
+              <div className="px-3 py-6 text-center text-sm text-muted-foreground">
+                Nenhum resultado
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-function ProductImage({ src, alt, className }: { src: string; alt: string; className?: string }) {
-  const [error, setError] = useState(false);
-  useEffect(() => { setError(false); }, [src]);
+function ProductImage({
+  src,
+  alt,
+  className,
+  flush = false,
+  fit = "cover",
+}: {
+  src?: string;
+  alt: string;
+  className?: string;
+  flush?: boolean;
+  fit?: "cover" | "contain";
+}) {
+  const [failed, setFailed] = useState(false);
+  const displaySrc = proxiedDisplayImageUrl(src);
 
-  if (!src || error) {
+  useEffect(() => {
+    setFailed(false);
+  }, [displaySrc]);
+
+  if (!displaySrc || failed) {
     return (
-      <div className={`flex flex-col items-center justify-center gap-1 bg-muted text-muted-foreground ${className ?? ""}`}>
-        <ImageOff className="h-6 w-6" />
-        <span className="text-[10px]">Imagem indisponível</span>
+      <div
+        className={`flex items-center justify-center bg-muted text-muted-foreground ${
+          flush ? "" : "rounded-md border border-dashed border-border"
+        } ${className ?? ""}`}
+      >
+        <ImageOff className="h-5 w-5" />
       </div>
     );
   }
 
   return (
     <img
-      src={src}
+      src={displaySrc}
       alt={alt}
       loading="lazy"
-      onError={() => setError(true)}
-      className={className}
+      onError={() => setFailed(true)}
+      className={`${flush ? "" : "rounded-md"} ${
+        fit === "contain" ? "object-contain" : "object-cover"
+      } ${className ?? ""}`}
     />
+  );
+}
+
+function ProductImageViewerDialog({
+  product,
+  onClose,
+  onEditImage,
+}: {
+  product: Product;
+  onClose: () => void;
+  onEditImage: () => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
+      onClick={onClose}
+    >
+      <div
+        className="flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-lg border border-border bg-background shadow-xl"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-3 border-b border-border p-4">
+          <div className="min-w-0">
+            <h2 className="truncate text-base font-extrabold">{product.reference}</h2>
+            <p className="truncate text-sm text-muted-foreground">{product.description}</p>
+            <div className="mt-1 flex flex-wrap gap-1.5 text-[11px] font-medium">
+              <span className="rounded bg-primary px-1.5 py-0.5 text-primary-foreground">
+                {product.brand}
+              </span>
+              <span className="rounded border border-border px-1.5 py-0.5">
+                Col. {product.collection}
+              </span>
+              <span className="rounded border border-border px-1.5 py-0.5">
+                {product.subgroup}
+              </span>
+            </div>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <button
+              type="button"
+              onClick={onEditImage}
+              className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-2 text-xs font-medium hover:bg-muted"
+            >
+              <ImageIcon className="h-3.5 w-3.5" />
+              Corrigir
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-md p-2 text-muted-foreground hover:bg-muted hover:text-foreground"
+              aria-label="Fechar imagem"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+
+        <div className="flex min-h-0 flex-1 items-center justify-center bg-muted">
+          <ProductImage
+            src={product.imageUrl}
+            alt={product.reference}
+            flush
+            fit="contain"
+            className="h-[72vh] w-full"
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ProductImageDialog({
+  product,
+  onClose,
+  onSave,
+}: {
+  product: Product;
+  onClose: () => void;
+  onSave: (imageUrl: string) => void;
+}) {
+  const [url, setUrl] = useState(product.imageUrl ?? "");
+  const [previewError, setPreviewError] = useState(false);
+  const previewUrl = normalizeImageUrl(url);
+  const previewDisplayUrl = proxiedDisplayImageUrl(previewUrl);
+
+  useEffect(() => {
+    setUrl(product.imageUrl ?? "");
+    setPreviewError(false);
+  }, [product]);
+
+  const validateAndSave = () => {
+    const trimmed = url.trim();
+    if (!trimmed) {
+      onSave("");
+      return;
+    }
+
+    try {
+      const parsed = new URL(trimmed);
+      if (!["http:", "https:"].includes(parsed.protocol)) {
+        toast.error("URL inválida.");
+        return;
+      }
+    } catch {
+      toast.error("URL inválida.");
+      return;
+    }
+
+    if (previewError) {
+      toast.error("Não foi possível carregar a imagem.");
+      return;
+    }
+
+    onSave(normalizeImageUrl(trimmed));
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-md rounded-lg border border-border bg-background p-5 shadow-xl"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="mb-4 flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h2 className="text-base font-bold">Imagem do produto</h2>
+            <p className="truncate text-xs text-muted-foreground">{product.reference}</p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded p-1 text-muted-foreground hover:bg-muted"
+            aria-label="Fechar"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <ProductImage src={previewUrl} alt={product.reference} className="aspect-[4/3] w-full" />
+        {previewDisplayUrl && (
+          <img
+            src={previewDisplayUrl}
+            alt=""
+            className="hidden"
+            onLoad={() => setPreviewError(false)}
+            onError={() => setPreviewError(true)}
+          />
+        )}
+
+        <label className="mt-4 block text-xs font-semibold text-muted-foreground">
+          URL da imagem
+        </label>
+        <input
+          value={url}
+          onChange={(event) => {
+            setUrl(event.target.value);
+            setPreviewError(false);
+          }}
+          placeholder="https://..."
+          autoFocus
+          className="mt-1 h-10 w-full rounded-md border border-border bg-card px-3 text-sm outline-none focus:border-foreground"
+        />
+
+        <div className="mt-5 flex justify-between gap-2">
+          <button
+            type="button"
+            onClick={() => onSave("")}
+            className="rounded-md border border-border px-4 py-2 text-sm font-medium hover:bg-muted"
+          >
+            Remover
+          </button>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-md border border-border px-4 py-2 text-sm font-medium hover:bg-muted"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={validateAndSave}
+              className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
+            >
+              Salvar
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -793,20 +1279,15 @@ function ProductCard({
   selected,
   onToggle,
   onEditImage,
+  onViewImage,
 }: {
   product: Product;
   selected: boolean;
   onToggle: () => void;
   onEditImage: () => void;
+  onViewImage: () => void;
 }) {
-  const allSizes = useMemo(
-    () => Array.from(new Set(product.colors.flatMap((c) => Object.keys(c.sizes)))).sort((a, b) => {
-      const na = Number(a), nb = Number(b);
-      if (!isNaN(na) && !isNaN(nb)) return na - nb;
-      return a.localeCompare(b);
-    }),
-    [product],
-  );
+  const allSizes = useMemo(() => availableSizes(product), [product]);
 
   return (
     <article
@@ -814,14 +1295,29 @@ function ProductCard({
         selected ? "border-foreground ring-1 ring-foreground" : "border-border"
       }`}
     >
-      <div className="grid grid-cols-1 md:grid-cols-[220px_minmax(0,1fr)]">
-        <div className="relative bg-muted">
-          <ProductImage
-            src={product.imageUrl}
-            alt={product.reference}
-            className="aspect-[3/4] w-full object-cover md:aspect-auto md:h-full"
-          />
-          <label className="absolute top-3 left-3 inline-flex h-6 w-6 cursor-pointer items-center justify-center rounded border border-border bg-background">
+      <div className="grid grid-cols-1 md:h-[340px] md:grid-cols-[220px_minmax(0,1fr)]">
+        <div className="relative h-64 bg-muted md:h-full">
+          <button
+            type="button"
+            onClick={onViewImage}
+            className={`block h-full w-full ${
+              product.imageUrl ? "cursor-zoom-in" : "cursor-pointer"
+            }`}
+            aria-label={
+              product.imageUrl
+                ? `Ampliar imagem de ${product.reference}`
+                : `Adicionar imagem para ${product.reference}`
+            }
+          >
+            <ProductImage
+              src={product.imageUrl}
+              alt={product.reference}
+              flush
+              fit="contain"
+              className="h-full w-full"
+            />
+          </button>
+          <label className="absolute top-3 left-3 z-10 inline-flex h-6 w-6 cursor-pointer items-center justify-center rounded border border-border bg-background/95 shadow-sm">
             <input
               type="checkbox"
               checked={selected}
@@ -832,8 +1328,8 @@ function ProductCard({
           </label>
         </div>
 
-        <div className="flex min-w-0 flex-col gap-3 p-4 sm:p-5">
-          <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
+        <div className="flex min-h-0 min-w-0 flex-col gap-3 p-4 sm:p-5">
+          <div className="grid shrink-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-4">
             <div className="min-w-0">
               <h3 className="text-lg font-extrabold tracking-tight">{product.reference}</h3>
               <p className="truncate text-sm text-muted-foreground">{product.description}</p>
@@ -848,7 +1344,6 @@ function ProductCard({
                   {product.subgroup}
                 </span>
               </div>
-              <p className="mt-1 text-xs text-muted-foreground">{product.composition}</p>
             </div>
             <div className="shrink-0 text-right">
               <div className="text-[10px] font-semibold tracking-wider text-muted-foreground uppercase">
@@ -861,22 +1356,7 @@ function ProductCard({
             </div>
           </div>
 
-          <div className="flex gap-6 border-y border-border py-2">
-            <div>
-              <div className="text-[10px] font-semibold tracking-wider text-muted-foreground uppercase">
-                Sell In
-              </div>
-              <div className="text-sm font-bold">{formatBRL(product.sellIn)}</div>
-            </div>
-            <div>
-              <div className="text-[10px] font-semibold tracking-wider text-muted-foreground uppercase">
-                Sell Out
-              </div>
-              <div className="text-sm font-bold">{formatBRL(product.sellOut)}</div>
-            </div>
-          </div>
-
-          <div className="-mx-1 overflow-x-auto no-scrollbar">
+          <div className="-mx-1 min-h-0 flex-1 overflow-auto pr-1">
             <table className="w-full min-w-max text-xs">
               <thead>
                 <tr className="border-b border-border text-left text-muted-foreground">
@@ -896,19 +1376,23 @@ function ProductCard({
                         {c.sizes[s] ?? 0}
                       </td>
                     ))}
-                    <td className="px-2 py-1.5 text-right font-bold tabular-nums">{c.total}</td>
+                    <td className="px-2 py-1.5 text-right font-bold tabular-nums">
+                      {c.total}
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
 
-          <div className="flex justify-end">
+          <div className="mt-auto flex justify-end">
             <button
+              type="button"
               onClick={onEditImage}
-              className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+              className="inline-flex items-center gap-1.5 rounded px-2 py-1 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
             >
-              <ImageIcon className="h-3.5 w-3.5" /> Corrigir imagem
+              <ImageIcon className="h-3.5 w-3.5" />
+              {product.imageUrl ? "Corrigir imagem" : "Adicionar imagem"}
             </button>
           </div>
         </div>
@@ -922,22 +1406,24 @@ function ProductTable({
   selected,
   onToggle,
   onTogglePage,
-  onEditImage,
   expandedRow,
   setExpandedRow,
+  onEditImage,
+  onViewImage,
 }: {
   items: Product[];
   selected: Set<string>;
   onToggle: (ref: string) => void;
   onTogglePage: () => void;
-  onEditImage: (ref: string) => void;
   expandedRow: string | null;
   setExpandedRow: (r: string | null) => void;
+  onEditImage: (ref: string) => void;
+  onViewImage: (ref: string) => void;
 }) {
   const allPageSelected = items.length > 0 && items.every((p) => selected.has(p.reference));
   return (
     <div className="overflow-x-auto rounded-lg border border-border bg-card">
-      <table className="w-full min-w-[900px] text-sm">
+      <table className="w-full min-w-[860px] text-sm">
         <thead className="bg-muted text-xs uppercase tracking-wider text-muted-foreground">
           <tr>
             <th className="w-10 p-3">
@@ -950,25 +1436,20 @@ function ProductTable({
               />
             </th>
             <th className="w-8 p-3"></th>
-            <th className="w-14 p-3"></th>
+            <th className="w-24 p-3 text-left font-semibold">Imagem</th>
             <th className="p-3 text-left font-semibold">Referência</th>
             <th className="p-3 text-left font-semibold">Descrição</th>
             <th className="p-3 text-left font-semibold">Griffe</th>
             <th className="p-3 text-left font-semibold">Col.</th>
             <th className="p-3 text-left font-semibold">Subgrupo</th>
-            <th className="p-3 text-right font-semibold">Sell In</th>
-            <th className="p-3 text-right font-semibold">Sell Out</th>
             <th className="p-3 text-right font-semibold">Total</th>
-            <th className="p-3"></th>
           </tr>
         </thead>
         <tbody>
           {items.map((p) => {
             const expanded = expandedRow === p.reference;
             const isSel = selected.has(p.reference);
-            const allSizes = Array.from(
-              new Set(p.colors.flatMap((c) => Object.keys(c.sizes))),
-            );
+            const allSizes = availableSizes(p);
             return (
               <>
                 <tr
@@ -993,35 +1474,45 @@ function ProductTable({
                     </button>
                   </td>
                   <td className="p-3">
-                    <ProductImage
-                      src={p.imageUrl}
-                      alt={p.reference}
-                      className="h-10 w-10 rounded object-cover"
-                    />
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => onViewImage(p.reference)}
+                        className={`block ${p.imageUrl ? "cursor-zoom-in" : "cursor-pointer"}`}
+                        aria-label={
+                          p.imageUrl
+                            ? `Ampliar imagem de ${p.reference}`
+                            : `Adicionar imagem para ${p.reference}`
+                        }
+                      >
+                        <ProductImage
+                          src={p.imageUrl}
+                          alt={p.reference}
+                          className="h-12 w-12"
+                        />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onEditImage(p.reference)}
+                        className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                        aria-label={`Corrigir imagem de ${p.reference}`}
+                      >
+                        <ImageIcon className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
                   </td>
                   <td className="p-3 font-bold">{p.reference}</td>
                   <td className="p-3 text-muted-foreground">{p.description}</td>
                   <td className="p-3">{p.brand}</td>
                   <td className="p-3">{p.collection}</td>
                   <td className="p-3">{p.subgroup}</td>
-                  <td className="p-3 text-right tabular-nums">{formatBRL(p.sellIn)}</td>
-                  <td className="p-3 text-right tabular-nums">{formatBRL(p.sellOut)}</td>
                   <td className="p-3 text-right font-bold tabular-nums">
                     {formatNum(p.totalQuantity)}
-                  </td>
-                  <td className="p-3 text-right">
-                    <button
-                      onClick={() => onEditImage(p.reference)}
-                      className="text-xs text-muted-foreground hover:text-foreground"
-                      aria-label="Corrigir imagem"
-                    >
-                      <ImageIcon className="h-4 w-4" />
-                    </button>
                   </td>
                 </tr>
                 {expanded && (
                   <tr key={`${p.reference}-x`} className="border-t border-border bg-muted/30">
-                    <td colSpan={12} className="p-4">
+                    <td colSpan={9} className="p-4">
                       <div className="overflow-x-auto">
                         <table className="w-full min-w-max text-xs">
                           <thead>
@@ -1080,130 +1571,3 @@ function EmptyState({
   );
 }
 
-function ImageEditDialog({
-  product,
-  onClose,
-  onSave,
-}: {
-  product: Product;
-  onClose: () => void;
-  onSave: (url: string) => void;
-}) {
-  const [url, setUrl] = useState(product.imageUrl);
-  const [previewError, setPreviewError] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    inputRef.current?.focus();
-  }, []);
-
-  const validate = () => {
-    if (!url.trim()) {
-      toast.error("Não foi possível atualizar a imagem. Verifique a URL e tente novamente.");
-      return;
-    }
-    try {
-      const u = new URL(url);
-      if (!["https:", "http:"].includes(u.protocol)) {
-        toast.error("Não foi possível atualizar a imagem. Verifique a URL e tente novamente.");
-        return;
-      }
-    } catch {
-      toast.error("Não foi possível atualizar a imagem. Verifique a URL e tente novamente.");
-      return;
-    }
-    if (previewError) {
-      toast.error("Não foi possível atualizar a imagem. Verifique a URL e tente novamente.");
-      return;
-    }
-    onSave(url.trim());
-  };
-
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
-      onClick={onClose}
-    >
-      <div
-        className="w-full max-w-lg rounded-lg border border-border bg-background p-6 shadow-xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="mb-4 flex items-start justify-between">
-          <div>
-            <h2 className="text-base font-bold">Corrigir imagem</h2>
-            <p className="text-xs text-muted-foreground">Referência {product.reference}</p>
-          </div>
-          <button
-            onClick={onClose}
-            className="rounded p-1 text-muted-foreground hover:bg-muted"
-            aria-label="Fechar"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <div className="mb-1 text-[10px] font-semibold uppercase text-muted-foreground">
-              Atual
-            </div>
-            <ProductImage
-              src={product.imageUrl}
-              alt="Atual"
-              className="aspect-square w-full rounded object-cover"
-            />
-          </div>
-          <div>
-            <div className="mb-1 text-[10px] font-semibold uppercase text-muted-foreground">
-              Pré-visualização
-            </div>
-            {url ? (
-              <img
-                src={url}
-                alt="Pré-visualização"
-                onLoad={() => setPreviewError(false)}
-                onError={() => setPreviewError(true)}
-                className="aspect-square w-full rounded object-cover"
-              />
-            ) : (
-              <div className="flex aspect-square w-full items-center justify-center rounded bg-muted text-muted-foreground">
-                <ImageOff className="h-6 w-6" />
-              </div>
-            )}
-          </div>
-        </div>
-
-        <label className="mt-4 block text-xs font-semibold text-muted-foreground">
-          URL da nova imagem
-        </label>
-        <input
-          ref={inputRef}
-          value={url}
-          onChange={(e) => {
-            setUrl(e.target.value);
-            setPreviewError(false);
-          }}
-          placeholder="https://catalogo.exemplo.com/produtos/..."
-          className="mt-1 w-full rounded-md border border-border bg-card px-3 py-2 text-sm outline-none focus:border-foreground"
-        />
-
-        <div className="mt-5 flex justify-end gap-2">
-          <button
-            onClick={onClose}
-            className="rounded-md border border-border px-4 py-2 text-sm font-medium hover:bg-muted"
-          >
-            Cancelar
-          </button>
-          <button
-            onClick={validate}
-            className="inline-flex items-center gap-1.5 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
-          >
-            <Copy className="hidden" />
-            <Download className="hidden" />
-            Salvar imagem
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
