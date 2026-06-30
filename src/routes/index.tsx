@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   Check,
@@ -1451,9 +1451,8 @@ function ProductTable({
             const isSel = selected.has(p.reference);
             const allSizes = availableSizes(p);
             return (
-              <>
+              <Fragment key={p.reference}>
                 <tr
-                  key={p.reference}
                   className={`border-t border-border ${isSel ? "bg-muted/60" : ""}`}
                 >
                   <td className="p-3">
@@ -1511,7 +1510,7 @@ function ProductTable({
                   </td>
                 </tr>
                 {expanded && (
-                  <tr key={`${p.reference}-x`} className="border-t border-border bg-muted/30">
+                  <tr className="border-t border-border bg-muted/30">
                     <td colSpan={9} className="p-4">
                       <div className="overflow-x-auto">
                         <table className="w-full min-w-max text-xs">
@@ -1544,7 +1543,7 @@ function ProductTable({
                     </td>
                   </tr>
                 )}
-              </>
+              </Fragment>
             );
           })}
         </tbody>
