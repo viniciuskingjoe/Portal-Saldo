@@ -12,7 +12,6 @@ import {
   LayoutList,
   RefreshCw,
   Search,
-  Share2,
   Trash2,
   X,
 } from "lucide-react";
@@ -464,20 +463,6 @@ function PortalPage() {
   };
   const clearSelection = () => setSelected(new Set());
 
-  const handleShare = () => {
-    const params = new URLSearchParams();
-    if (selected.size) params.set("refs", [...selected].join(","));
-    if (filters.search) params.set("q", filters.search);
-    if (filters.brands.length) params.set("brands", filters.brands.join(","));
-    if (filters.collections.length) params.set("collections", filters.collections.join(","));
-    if (filters.subgroups.length) params.set("subgroups", filters.subgroups.join(","));
-    if (filters.colors.length) params.set("colors", filters.colors.join(","));
-    const url = `${window.location.origin}/?${params.toString()}`;
-    navigator.clipboard.writeText(url).then(() => {
-      toast.success("Link da seleção copiado com sucesso.");
-    });
-  };
-
   const activeFilterCount =
     filters.brands.length +
     filters.collections.length +
@@ -819,12 +804,6 @@ function PortalPage() {
               {selected.size === 1 ? "referência selecionada" : "referências selecionadas"}
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <button
-                onClick={handleShare}
-                className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-2 text-xs font-medium text-primary-foreground hover:opacity-90"
-              >
-                <Share2 className="h-3.5 w-3.5" /> Compartilhar
-              </button>
               <button
                 onClick={clearSelection}
                 className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-3 py-2 text-xs font-medium hover:bg-muted"
