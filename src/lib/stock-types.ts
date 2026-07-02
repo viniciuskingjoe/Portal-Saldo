@@ -1,3 +1,13 @@
+// Tipos de politica comercial (B2B_POLITICA_COMERCIAL.TIPO_ACESSO). Fonte unica:
+// dirige a query no servidor e os checkboxes no card. Adicionar tipo = 1 linha aqui.
+export const ACCESS_TYPES = [
+  { key: "funcionario", code: "F", label: "Funcionário" },
+  { key: "representante", code: "R", label: "Representante" },
+  { key: "atacado", code: "A", label: "Atacado" },
+] as const;
+
+export type AccessKey = (typeof ACCESS_TYPES)[number]["key"];
+
 export interface ColorStock {
   code: string;
   description: string;
@@ -12,7 +22,7 @@ export interface Product {
   subgroup: string;
   collection: string;
   brand: string;
-  funcionario: boolean;
+  access: Record<AccessKey, boolean>;
   imageUrl?: string;
   totalQuantity: number;
   colors: ColorStock[];

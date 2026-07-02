@@ -17,13 +17,14 @@ import {
 
 import { Toaster } from "@/components/ui/sonner";
 import type { Filters, Product, SortKey, ViewMode } from "@/lib/stock-types";
+import { ACCESS_TYPES } from "@/lib/stock-types";
 import { DRIVE_IMAGE_MAP, DRIVE_IMAGE_MAP_BY_BRAND } from "@/lib/drive-image-map";
 import { formatNum, formatTime } from "@/lib/format";
 
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "Portal-Saldo-Estoque" },
+      { title: "Portal Saldo Estoque" },
       {
         name: "description",
         content:
@@ -487,7 +488,7 @@ function PortalPage() {
           <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4">
             <div className="min-w-0">
               <h1 className="truncate text-xl font-extrabold tracking-tight sm:text-2xl">
-                Portal-Saldo-Estoque
+                Portal Saldo Estoque
               </h1>
               <p className="truncate text-xs text-muted-foreground sm:text-sm">
                 Consulta interna de disponibilidade
@@ -1199,16 +1200,25 @@ function ProductCard({
                   {product.subgroup}
                 </span>
               </div>
-              <label className="mt-2 inline-flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
-                <input
-                  type="checkbox"
-                  checked={product.funcionario}
-                  readOnly
-                  className="pointer-events-none h-3.5 w-3.5 accent-black"
-                  aria-label={`Produto ${product.funcionario ? "" : "nao "}disponivel para funcionario`}
-                />
-                Funcionário
-              </label>
+              <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
+                {ACCESS_TYPES.map((type) => (
+                  <label
+                    key={type.key}
+                    className="inline-flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={product.access[type.key]}
+                      readOnly
+                      className="pointer-events-none h-3.5 w-3.5 accent-black"
+                      aria-label={`Produto ${
+                        product.access[type.key] ? "" : "nao "
+                      }disponivel para ${type.label}`}
+                    />
+                    {type.label}
+                  </label>
+                ))}
+              </div>
             </div>
             <div className="shrink-0 text-right">
               <div className="text-[10px] font-semibold tracking-wider text-muted-foreground uppercase">

@@ -35,7 +35,9 @@ export const stockSqlSchema = {
       "TAMANHO_12",
     ],
   },
-  employeePolicy: {
+  // Join com politica comercial B2B. O codigo de cada TIPO_ACESSO vem de
+  // ACCESS_TYPES (lib/stock-types); aqui ficam so tabelas/colunas e STATUS ativo.
+  accessPolicy: {
     productTable: { database: "PORTAL_CLIENTE", schema: "dbo", name: "B2B_PRODUTO" },
     policyTable: { database: "PORTAL_CLIENTE", schema: "dbo", name: "B2B_POLITICA_COMERCIAL" },
     columns: {
@@ -45,8 +47,6 @@ export const stockSqlSchema = {
       accessType: "TIPO_ACESSO",
       status: "STATUS",
     },
-    // TIPO_ACESSO = 'F' (funcionario) e STATUS = 1 marcam o produto como funcionario.
-    accessTypeValue: "F",
     activeStatus: 1,
   },
   maxRows: 50000,

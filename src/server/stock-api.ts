@@ -1,7 +1,19 @@
-import type { Product } from "@/lib/stock-types";
+import type { AccessKey, Product } from "@/lib/stock-types";
+import { ACCESS_TYPES } from "@/lib/stock-types";
 
 import { getSqlPool } from "./sql-server";
 import { sqlIdentifier, sqlStringLiteral, sqlTableName, stockSqlSchema } from "./stock-schema";
+
+function accessAlias(key: AccessKey): string {
+  return `access_${key}`;
+}
+
+function emptyAccess(): Record<AccessKey, boolean> {
+  return Object.fromEntries(ACCESS_TYPES.map((type) => [type.key, false])) as Record<
+    AccessKey,
+    boolean
+  >;
+}
 
 type StockRow = {
   reference: unknown;
@@ -12,7 +24,6 @@ type StockRow = {
   grade: unknown;
   colorCode: unknown;
   colorDescription: unknown;
-  funcionario: unknown;
   sizes: unknown[];
   quantities: unknown[];
 };
@@ -44,11 +55,11 @@ function quantityColumn(index: number): string {
   return `e.${sqlIdentifier(stockSqlSchema.stockColumns.quantities[index])}`;
 }
 
-function buildEmployeeFlagColumn(): string {
-  const { employeePolicy } = stockSqlSchema;
-  const product = sqlTableName(employeePolicy.productTable);
-  const policy = sqlTableName(employeePolicy.policyTable);
-  const col = employeePolicy.columns;
+function buildAccessFlagColumn(accessCode: string, alias: string): string {
+  const { accessPolicy } = stockSqlSchema;
+  const product = sqlTableName(accessPolicy.productTable);
+  const policy = sqlTableName(accessPolicy.policyTable);
+  const col = accessPolicy.columns;
 
   // EXISTS evita multiplicar linhas do estoque quando o produto tem mais de uma politica.
   // COLLATE DATABASE_DEFAULT alinha collation entre os bancos no join cross-database.
@@ -62,9 +73,15 @@ function buildEmployeeFlagColumn(): string {
             = ${stockColumn("reference")} COLLATE DATABASE_DEFAULT
           AND p.${sqlIdentifier(col.color)} COLLATE DATABASE_DEFAULT
             = ${stockColumn("colorCode")} COLLATE DATABASE_DEFAULT
-          AND pc.${sqlIdentifier(col.accessType)} = ${sqlStringLiteral(employeePolicy.accessTypeValue)}
-          AND pc.${sqlIdentifier(col.status)} = ${employeePolicy.activeStatus}
-      ) THEN 1 ELSE 0 END AS [funcionario]`;
+          AND pc.${sqlIdentifier(col.accessType)} = ${sqlStringLiteral(accessCode)}
+          AND pc.${sqlIdentifier(col.status)} = ${accessPolicy.activeStatus}
+      ) THEN 1 ELSE 0 END AS ${sqlIdentifier(alias)}`;
+}
+
+function buildAccessFlagColumns(): string {
+  return ACCESS_TYPES.map((type) => buildAccessFlagColumn(type.code, accessAlias(type.key))).join(
+    ",\n      ",
+  );
 }
 
 function buildStockQuery(): string {
@@ -90,7 +107,7 @@ function buildStockQuery(): string {
       ${stockColumn("grade")} AS [grade],
       ${stockColumn("colorCode")} AS [colorCode],
       ${stockColumn("colorDescription")} AS [colorDescription],
-      ${buildEmployeeFlagColumn()},
+      ${buildAccessFlagColumns()},
       ${sizeSelects},
       ${quantitySelects}
     FROM ${sqlTableName(stockSqlSchema.stockTable)} e
@@ -135,14 +152,18 @@ function mapRowsToProducts(rows: StockRow[]): Product[] {
         subgroup: text(row.subgroup, "Sem subgrupo"),
         collection: text(row.collection, "Sem colecao"),
         brand: text(row.brand, "Sem griffe"),
-        funcionario: false,
+        access: emptyAccess(),
         totalQuantity: 0,
         colors: [],
       };
       products.set(reference, product);
     }
 
-    if (number(row.funcionario) === 1) product.funcionario = true;
+    for (const type of ACCESS_TYPES) {
+      if (number((rawRow as Record<string, unknown>)[accessAlias(type.key)]) === 1) {
+        product.access[type.key] = true;
+      }
+    }
 
     const code = text(row.colorCode);
     const description = text(row.colorDescription);
