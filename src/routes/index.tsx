@@ -75,8 +75,6 @@ type StockApiResponse = {
   updatedAt: string;
 };
 
-type ConnectionStatus = "loading" | "connected" | "error";
-
 function isStockApiResponse(value: unknown): value is StockApiResponse {
   if (value == null || typeof value !== "object") return false;
   const payload = value as Partial<StockApiResponse>;
@@ -250,8 +248,6 @@ function PortalPage() {
   const resultsTopRef = useRef<HTMLDivElement | null>(null);
   const didRenderPageRef = useRef(false);
   const [allProducts, setAllProducts] = useState<Product[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>("loading");
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
   const [searchInput, setSearchInput] = useState("");
@@ -279,9 +275,6 @@ function PortalPage() {
   const [editingImageRef, setEditingImageRef] = useState<string | null>(null);
 
   const loadStock = useCallback(async (silent = false) => {
-    setLoading(true);
-    setConnectionStatus((current) => (current === "connected" ? current : "loading"));
-
     try {
       const response = await fetch("/api/stock", {
         headers: {
@@ -304,11 +297,9 @@ function PortalPage() {
 
       setAllProducts(payload.products);
       setLastUpdate(parseApiDate(payload.updatedAt));
-      setConnectionStatus("connected");
       if (!silent) toast.success("Estoque atualizado.");
     } catch (error) {
       console.error(error);
-      setConnectionStatus("error");
       if (!silent) {
         toast.error(
           error instanceof Error
@@ -316,8 +307,6 @@ function PortalPage() {
             : "Nao foi possivel consultar o SQL Server.",
         );
       }
-    } finally {
-      setLoading(false);
     }
   }, []);
 
@@ -484,36 +473,13 @@ function PortalPage() {
       {/* Header */}
       <header className="sticky top-0 z-30 border-b border-border bg-background/95 backdrop-blur">
         <div className="mx-auto max-w-[1600px] px-4 py-4 sm:px-6">
-          <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4">
-            <div className="min-w-0">
-              <h1 className="truncate text-xl font-extrabold tracking-tight sm:text-2xl">
-                Portal Saldo Estoque
-              </h1>
-              <p className="truncate text-xs text-muted-foreground sm:text-sm">
-                Consulta interna de disponibilidade
-              </p>
-            </div>
-            <div className="flex shrink-0 items-center gap-2 sm:gap-3">
-              <div className="hidden items-center gap-2 rounded-full border border-border px-3 py-1.5 text-xs sm:flex">
-                <span
-                  className={`h-2 w-2 rounded-full ${
-                    loading
-                      ? "animate-pulse bg-muted-foreground"
-                      : connectionStatus === "connected"
-                        ? "bg-foreground"
-                        : "bg-red-500"
-                  }`}
-                />
-                <span className="font-medium">
-                  {loading
-                    ? "Atualizando"
-                    : connectionStatus === "connected"
-                      ? "SQL Server"
-                      : "Banco offline"}
-                </span>
-                <span className="text-muted-foreground">· {lastUpdateText}</span>
-              </div>
-            </div>
+          <div className="min-w-0">
+            <h1 className="truncate text-xl font-extrabold tracking-tight sm:text-2xl">
+              Portal Saldo Estoque
+            </h1>
+            <p className="truncate text-xs text-muted-foreground sm:text-sm">
+              Consulta interna de disponibilidade
+            </p>
           </div>
         </div>
       </header>
