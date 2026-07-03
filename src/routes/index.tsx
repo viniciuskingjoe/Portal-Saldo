@@ -10,7 +10,6 @@ import {
   ImageIcon,
   ImageOff,
   LayoutList,
-  RefreshCw,
   Search,
   X,
 } from "lucide-react";
@@ -514,14 +513,6 @@ function PortalPage() {
                 </span>
                 <span className="text-muted-foreground">· {lastUpdateText}</span>
               </div>
-              <button
-                onClick={refresh}
-                disabled={loading}
-                className="inline-flex items-center gap-2 rounded-md bg-primary px-3 py-2 text-xs font-medium text-primary-foreground transition hover:opacity-90 disabled:opacity-50 sm:text-sm"
-              >
-                <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
-                <span className="hidden sm:inline">Atualizar agora</span>
-              </button>
             </div>
           </div>
         </div>
