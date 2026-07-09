@@ -3,7 +3,7 @@
 export const ACCESS_TYPES = [
   { key: "funcionario", code: "F", label: "Funcionário" },
   { key: "representante", code: "R", label: "Representante" },
-  { key: "atacado", code: "A", label: "Atacado" },
+  { key: "atacado", code: "A", label: "Cliente Atacado" },
 ] as const;
 
 export type AccessKey = (typeof ACCESS_TYPES)[number]["key"];
