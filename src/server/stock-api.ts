@@ -289,6 +289,14 @@ function mapRowsToProducts(rows: StockRow[]): Product[] {
       ...product,
       colors: product.colors.filter((color) => color.total > 0),
     }))
+    .map((product) => {
+      const images = product.colors.flatMap((color) => color.images);
+      return {
+        ...product,
+        imageUrl: images[0]?.url,
+        images,
+      };
+    })
     .filter((product) => product.totalQuantity > 0 && product.colors.length > 0);
 }
 
