@@ -7,7 +7,6 @@ import {
   ChevronRight,
   Filter,
   Grid3x3,
-  ImageIcon,
   ImageOff,
   LayoutList,
   Search,
@@ -17,7 +16,6 @@ import {
 import { Toaster } from "@/components/ui/sonner";
 import type { Filters, Product, SortKey, ViewMode } from "@/lib/stock-types";
 import { ACCESS_TYPES } from "@/lib/stock-types";
-import { DRIVE_IMAGE_MAP, DRIVE_IMAGE_MAP_BY_BRAND } from "@/lib/drive-image-map";
 import { formatNum, formatTime } from "@/lib/format";
 
 export const Route = createFileRoute("/")({
@@ -54,8 +52,6 @@ const EMPTY_FILTERS: Filters = {
   subgroups: [],
   colors: [],
 };
-
-const IMAGE_STORAGE_KEY = "psv-product-images";
 
 type FilterKey = "brands" | "collections" | "subgroups" | "colors";
 
@@ -133,97 +129,6 @@ function availableSizes(product: Product): string[] {
   return [...sizes].sort(sortSizeLabels);
 }
 
-function extractUnsplashPhotoId(parsed: URL): string | null {
-  const host = parsed.hostname.toLowerCase().replace(/^www\./, "");
-  if (host !== "unsplash.com") return null;
-
-  const segments = parsed.pathname
-    .split("/")
-    .map((segment) => segment.trim())
-    .filter(Boolean);
-  const isPhotoPage =
-    segments.includes("photos") ||
-    segments.includes("fotografias") ||
-    segments.includes("fotos");
-  if (!isPhotoPage) return null;
-
-  const lastSegment = segments.at(-1);
-  if (!lastSegment) return null;
-
-  const exactId = lastSegment.match(/^[A-Za-z0-9_-]{11}$/);
-  if (exactId) return lastSegment;
-
-  const trailingId = lastSegment.slice(-11);
-  return /^[A-Za-z0-9_-]{11}$/.test(trailingId) ? trailingId : null;
-}
-
-function extractGoogleDriveFileId(parsed: URL): string | null {
-  const host = parsed.hostname.toLowerCase().replace(/^www\./, "");
-  if (host !== "drive.google.com" && host !== "docs.google.com") return null;
-
-  const id = parsed.searchParams.get("id");
-  if (id) return id;
-
-  const segments = parsed.pathname
-    .split("/")
-    .map((segment) => segment.trim())
-    .filter(Boolean);
-  const fileIndex = segments.indexOf("file");
-
-  if (fileIndex >= 0 && segments[fileIndex + 1] === "d" && segments[fileIndex + 2]) {
-    return segments[fileIndex + 2];
-  }
-
-  return null;
-}
-
-function normalizeImageUrl(value: string): string {
-  const trimmed = value.trim();
-  if (!trimmed) return "";
-
-  try {
-    const parsed = new URL(trimmed);
-    const driveFileId = extractGoogleDriveFileId(parsed);
-    if (driveFileId) {
-      return `https://drive.google.com/thumbnail?id=${driveFileId}&sz=w1200`;
-    }
-
-    const unsplashPhotoId = extractUnsplashPhotoId(parsed);
-    if (unsplashPhotoId) {
-      return `https://unsplash.com/photos/${unsplashPhotoId}/download?force=true&w=1200`;
-    }
-  } catch {
-    return trimmed;
-  }
-
-  return trimmed;
-}
-
-function imageLookupKey(value: string): string {
-  return value
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toUpperCase()
-    .replace(/[^A-Z0-9]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function referenceLookupKeys(reference: string): string[] {
-  const normalized = reference.trim().toUpperCase();
-  return [...new Set([normalized, normalized.replace(/\./g, "")])].filter(Boolean);
-}
-
-function getDriveImageUrl(product: Product): string | undefined {
-  const brandMap = DRIVE_IMAGE_MAP_BY_BRAND[imageLookupKey(product.brand)];
-  for (const reference of referenceLookupKeys(product.reference)) {
-    const imageUrl = brandMap?.[reference] ?? DRIVE_IMAGE_MAP[reference];
-    if (imageUrl) return imageUrl;
-  }
-
-  return undefined;
-}
-
 function proxiedDisplayImageUrl(src?: string): string | undefined {
   const trimmed = src?.trim();
   if (!trimmed) return undefined;
@@ -263,16 +168,6 @@ function PortalPage() {
   const [filterSearch, setFilterSearch] = useState("");
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
   const [viewingImageRef, setViewingImageRef] = useState<string | null>(null);
-  const [imageMap, setImageMap] = useState<Record<string, string>>(() => {
-    if (typeof window === "undefined") return {};
-    try {
-      const value = localStorage.getItem(IMAGE_STORAGE_KEY);
-      return value ? (JSON.parse(value) as Record<string, string>) : {};
-    } catch {
-      return {};
-    }
-  });
-  const [editingImageRef, setEditingImageRef] = useState<string | null>(null);
 
   const loadStock = useCallback(async (silent = false) => {
     try {
@@ -314,10 +209,6 @@ function PortalPage() {
   useEffect(() => {
     localStorage.setItem("psv-view", view);
   }, [view]);
-
-  useEffect(() => {
-    localStorage.setItem(IMAGE_STORAGE_KEY, JSON.stringify(imageMap));
-  }, [imageMap]);
 
   useEffect(() => {
     if (!filtersOpen) {
@@ -363,15 +254,7 @@ function PortalPage() {
   };
   const lastUpdateText = lastUpdate ? formatTime(lastUpdate) : "--:--:--";
 
-  const products = useMemo(
-    () =>
-      allProducts.map((product) => {
-        const imageUrl =
-          imageMap[product.reference] ?? product.imageUrl ?? getDriveImageUrl(product);
-        return imageUrl ? { ...product, imageUrl } : product;
-      }),
-    [allProducts, imageMap],
-  );
+  const products = allProducts;
 
   // Distinct filter options
   const opts = useMemo(() => {
@@ -451,20 +334,7 @@ function PortalPage() {
     setPage(1);
   };
 
-  const editingImageProduct = products.find((product) => product.reference === editingImageRef);
   const viewingImageProduct = products.find((product) => product.reference === viewingImageRef);
-
-  const saveProductImage = (reference: string, imageUrl: string) => {
-    setImageMap((current) => {
-      const next = { ...current };
-      const trimmed = normalizeImageUrl(imageUrl);
-      if (trimmed) next[reference] = trimmed;
-      else delete next[reference];
-      return next;
-    });
-    setEditingImageRef(null);
-    toast.success(imageUrl.trim() ? "Imagem salva." : "Imagem removida.");
-  };
 
   return (
     <div className="min-h-screen bg-background pb-32">
@@ -663,10 +533,8 @@ function PortalPage() {
               <ProductCard
                 key={p.reference}
                 product={p}
-                onEditImage={() => setEditingImageRef(p.reference)}
                 onViewImage={() => {
                   if (p.imageUrl) setViewingImageRef(p.reference);
-                  else setEditingImageRef(p.reference);
                 }}
               />
             ))}
@@ -676,11 +544,9 @@ function PortalPage() {
             items={pageItems}
             expandedRow={expandedRow}
             setExpandedRow={setExpandedRow}
-            onEditImage={setEditingImageRef}
             onViewImage={(reference) => {
               const product = products.find((item) => item.reference === reference);
               if (product?.imageUrl) setViewingImageRef(reference);
-              else setEditingImageRef(reference);
             }}
           />
         )}
@@ -726,22 +592,10 @@ function PortalPage() {
         )}
       </main>
 
-      {editingImageProduct && (
-        <ProductImageDialog
-          product={editingImageProduct}
-          onClose={() => setEditingImageRef(null)}
-          onSave={(imageUrl) => saveProductImage(editingImageProduct.reference, imageUrl)}
-        />
-      )}
-
       {viewingImageProduct?.imageUrl && (
         <ProductImageViewerDialog
           product={viewingImageProduct}
           onClose={() => setViewingImageRef(null)}
-          onEditImage={() => {
-            setViewingImageRef(null);
-            setEditingImageRef(viewingImageProduct.reference);
-          }}
         />
       )}
     </div>
@@ -915,11 +769,9 @@ function ProductImage({
 function ProductImageViewerDialog({
   product,
   onClose,
-  onEditImage,
 }: {
   product: Product;
   onClose: () => void;
-  onEditImage: () => void;
 }) {
   return (
     <div
@@ -946,24 +798,14 @@ function ProductImageViewerDialog({
               </span>
             </div>
           </div>
-          <div className="flex shrink-0 items-center gap-2">
-            <button
-              type="button"
-              onClick={onEditImage}
-              className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-2 text-xs font-medium hover:bg-muted"
-            >
-              <ImageIcon className="h-3.5 w-3.5" />
-              Corrigir
-            </button>
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-md p-2 text-muted-foreground hover:bg-muted hover:text-foreground"
-              aria-label="Fechar imagem"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="shrink-0 rounded-md p-2 text-muted-foreground hover:bg-muted hover:text-foreground"
+            aria-label="Fechar imagem"
+          >
+            <X className="h-4 w-4" />
+          </button>
         </div>
 
         <div className="flex min-h-0 flex-1 items-center justify-center bg-muted">
@@ -980,137 +822,11 @@ function ProductImageViewerDialog({
   );
 }
 
-function ProductImageDialog({
-  product,
-  onClose,
-  onSave,
-}: {
-  product: Product;
-  onClose: () => void;
-  onSave: (imageUrl: string) => void;
-}) {
-  const [url, setUrl] = useState(product.imageUrl ?? "");
-  const [previewError, setPreviewError] = useState(false);
-  const previewUrl = normalizeImageUrl(url);
-  const previewDisplayUrl = proxiedDisplayImageUrl(previewUrl);
-
-  useEffect(() => {
-    setUrl(product.imageUrl ?? "");
-    setPreviewError(false);
-  }, [product]);
-
-  const validateAndSave = () => {
-    const trimmed = url.trim();
-    if (!trimmed) {
-      onSave("");
-      return;
-    }
-
-    try {
-      const parsed = new URL(trimmed);
-      if (!["http:", "https:"].includes(parsed.protocol)) {
-        toast.error("URL inválida.");
-        return;
-      }
-    } catch {
-      toast.error("URL inválida.");
-      return;
-    }
-
-    if (previewError) {
-      toast.error("Não foi possível carregar a imagem.");
-      return;
-    }
-
-    onSave(normalizeImageUrl(trimmed));
-  };
-
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
-      onClick={onClose}
-    >
-      <div
-        className="w-full max-w-md rounded-lg border border-border bg-background p-5 shadow-xl"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <div className="mb-4 flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <h2 className="text-base font-bold">Imagem do produto</h2>
-            <p className="truncate text-xs text-muted-foreground">{product.reference}</p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded p-1 text-muted-foreground hover:bg-muted"
-            aria-label="Fechar"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-
-        <ProductImage src={previewUrl} alt={product.reference} className="aspect-[4/3] w-full" />
-        {previewDisplayUrl && (
-          <img
-            src={previewDisplayUrl}
-            alt=""
-            className="hidden"
-            onLoad={() => setPreviewError(false)}
-            onError={() => setPreviewError(true)}
-          />
-        )}
-
-        <label className="mt-4 block text-xs font-semibold text-muted-foreground">
-          URL da imagem
-        </label>
-        <input
-          value={url}
-          onChange={(event) => {
-            setUrl(event.target.value);
-            setPreviewError(false);
-          }}
-          placeholder="https://..."
-          autoFocus
-          className="mt-1 h-10 w-full rounded-md border border-border bg-card px-3 text-sm outline-none focus:border-foreground"
-        />
-
-        <div className="mt-5 flex justify-between gap-2">
-          <button
-            type="button"
-            onClick={() => onSave("")}
-            className="rounded-md border border-border px-4 py-2 text-sm font-medium hover:bg-muted"
-          >
-            Remover
-          </button>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-md border border-border px-4 py-2 text-sm font-medium hover:bg-muted"
-            >
-              Cancelar
-            </button>
-            <button
-              type="button"
-              onClick={validateAndSave}
-              className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
-            >
-              Salvar
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function ProductCard({
   product,
-  onEditImage,
   onViewImage,
 }: {
   product: Product;
-  onEditImage: () => void;
   onViewImage: () => void;
 }) {
   const allSizes = useMemo(() => availableSizes(product), [product]);
@@ -1122,13 +838,14 @@ function ProductCard({
           <button
             type="button"
             onClick={onViewImage}
+            disabled={!product.imageUrl}
             className={`block h-full w-full ${
-              product.imageUrl ? "cursor-zoom-in" : "cursor-pointer"
+              product.imageUrl ? "cursor-zoom-in" : "cursor-default"
             }`}
             aria-label={
               product.imageUrl
                 ? `Ampliar imagem de ${product.reference}`
-                : `Adicionar imagem para ${product.reference}`
+                : `Produto ${product.reference} sem imagem`
             }
           >
             <ProductImage
@@ -1217,16 +934,6 @@ function ProductCard({
             </table>
           </div>
 
-          <div className="mt-auto flex justify-end">
-            <button
-              type="button"
-              onClick={onEditImage}
-              className="inline-flex items-center gap-1.5 rounded px-2 py-1 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
-            >
-              <ImageIcon className="h-3.5 w-3.5" />
-              {product.imageUrl ? "Corrigir imagem" : "Adicionar imagem"}
-            </button>
-          </div>
         </div>
       </div>
     </article>
@@ -1237,13 +944,11 @@ function ProductTable({
   items,
   expandedRow,
   setExpandedRow,
-  onEditImage,
   onViewImage,
 }: {
   items: Product[];
   expandedRow: string | null;
   setExpandedRow: (r: string | null) => void;
-  onEditImage: (ref: string) => void;
   onViewImage: (ref: string) => void;
 }) {
   return (
@@ -1278,32 +983,23 @@ function ProductTable({
                     </button>
                   </td>
                   <td className="p-3">
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => onViewImage(p.reference)}
-                        className={`block ${p.imageUrl ? "cursor-zoom-in" : "cursor-pointer"}`}
-                        aria-label={
-                          p.imageUrl
-                            ? `Ampliar imagem de ${p.reference}`
-                            : `Adicionar imagem para ${p.reference}`
-                        }
-                      >
-                        <ProductImage
-                          src={p.imageUrl}
-                          alt={p.reference}
-                          className="h-12 w-12"
-                        />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => onEditImage(p.reference)}
-                        className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-                        aria-label={`Corrigir imagem de ${p.reference}`}
-                      >
-                        <ImageIcon className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
+                    <button
+                      type="button"
+                      onClick={() => onViewImage(p.reference)}
+                      disabled={!p.imageUrl}
+                      className={`block ${p.imageUrl ? "cursor-zoom-in" : "cursor-default"}`}
+                      aria-label={
+                        p.imageUrl
+                          ? `Ampliar imagem de ${p.reference}`
+                          : `Produto ${p.reference} sem imagem`
+                      }
+                    >
+                      <ProductImage
+                        src={p.imageUrl}
+                        alt={p.reference}
+                        className="h-12 w-12"
+                      />
+                    </button>
                   </td>
                   <td className="p-3 font-bold">{p.reference}</td>
                   <td className="p-3 text-muted-foreground">{p.description}</td>

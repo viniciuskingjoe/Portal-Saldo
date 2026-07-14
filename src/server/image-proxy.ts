@@ -1,14 +1,10 @@
 const ALLOWED_HOSTS = new Set([
-  "drive.google.com",
-  "docs.google.com",
-  "images.unsplash.com",
-  "plus.unsplash.com",
-  "unsplash.com",
+  "dfcl9ybffzusy.cloudfront.net",
 ]);
 
 function isAllowedImageHost(hostname: string): boolean {
   const host = hostname.toLowerCase();
-  return ALLOWED_HOSTS.has(host) || host.endsWith(".googleusercontent.com");
+  return ALLOWED_HOSTS.has(host);
 }
 
 export async function handleImageProxyRequest(request: Request): Promise<Response | null> {

@@ -10,7 +10,6 @@
     "build:node": "NITRO_PRESET=node-server vite build",
     "start": "node .output/server/index.mjs",
     "preview": "vite preview",
-    "sync:drive-images": "node scripts/build-drive-image-map.mjs",
     "lint": "eslint .",
     "format": "prettier --write ."
   },

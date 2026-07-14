@@ -21,6 +21,7 @@ type StockRow = {
   subgroup: unknown;
   collection: unknown;
   brand: unknown;
+  imageUrl: unknown;
   grade: unknown;
   colorCode: unknown;
   colorDescription: unknown;
@@ -55,6 +56,27 @@ function quantityColumn(index: number): string {
   return `e.${sqlIdentifier(stockSqlSchema.stockColumns.quantities[index])}`;
 }
 
+function imageUrl(value: unknown): string | undefined {
+  const filename = text(value);
+  if (!filename) return undefined;
+
+  const baseUrl = stockSqlSchema.productImage.cloudFrontBaseUrl;
+  const normalizedBaseUrl = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
+  const cloudFrontHost = new URL(normalizedBaseUrl).hostname.toLowerCase();
+
+  if (/^https?:\/\//i.test(filename)) {
+    try {
+      const parsed = new URL(filename);
+      return parsed.hostname.toLowerCase() === cloudFrontHost ? parsed.toString() : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  const imagePath = filename.replace(/^[\\/]+/, "").replace(/\\/g, "/");
+  return new URL(imagePath, normalizedBaseUrl).toString();
+}
+
 function buildAccessFlagColumn(accessCode: string, alias: string): string {
   const { accessPolicy } = stockSqlSchema;
   const product = sqlTableName(accessPolicy.productTable);
@@ -84,6 +106,27 @@ function buildAccessFlagColumns(): string {
   );
 }
 
+function buildImageApply(): string {
+  const { productImage } = stockSqlSchema;
+  const table = sqlTableName(productImage.table);
+  const col = productImage.columns;
+
+  return `
+    OUTER APPLY (
+      SELECT TOP (1)
+        img.${sqlIdentifier(col.image)} AS [imageUrl]
+      FROM ${table} img
+      WHERE img.${sqlIdentifier(col.product)} COLLATE DATABASE_DEFAULT
+          = ${stockColumn("reference")} COLLATE DATABASE_DEFAULT
+        AND img.${sqlIdentifier(col.color)} COLLATE DATABASE_DEFAULT
+          = ${stockColumn("colorCode")} COLLATE DATABASE_DEFAULT
+        AND NULLIF(LTRIM(RTRIM(img.${sqlIdentifier(col.image)})), '') IS NOT NULL
+      ORDER BY
+        CASE WHEN img.${sqlIdentifier(col.position)} = 1 THEN 0 ELSE 1 END,
+        img.${sqlIdentifier(col.position)}
+    ) product_image`;
+}
+
 function buildStockQuery(): string {
   const quantityTotal = stockSqlSchema.stockColumns.quantities
     .map((_, index) => `ISNULL(${quantityColumn(index)}, 0)`)
@@ -104,6 +147,7 @@ function buildStockQuery(): string {
       ${stockColumn("subgroup")} AS [subgroup],
       ${stockColumn("collection")} AS [collection],
       ${stockColumn("brand")} AS [brand],
+      product_image.[imageUrl] AS [imageUrl],
       ${stockColumn("grade")} AS [grade],
       ${stockColumn("colorCode")} AS [colorCode],
       ${stockColumn("colorDescription")} AS [colorDescription],
@@ -114,6 +158,7 @@ function buildStockQuery(): string {
     LEFT JOIN ${sqlTableName(stockSqlSchema.sizeTable)} t
       ON t.${sqlIdentifier(stockSqlSchema.sizeColumns.grade)}
         = ${stockColumn("grade")}
+    ${buildImageApply()}
     ${where}
     ORDER BY ${stockColumn("reference")}, ${stockColumn("colorCode")}
   `;
@@ -152,11 +197,14 @@ function mapRowsToProducts(rows: StockRow[]): Product[] {
         subgroup: text(row.subgroup, "Sem subgrupo"),
         collection: text(row.collection, "Sem colecao"),
         brand: text(row.brand, "Sem griffe"),
+        imageUrl: imageUrl(row.imageUrl),
         access: emptyAccess(),
         totalQuantity: 0,
         colors: [],
       };
       products.set(reference, product);
+    } else if (!product.imageUrl) {
+      product.imageUrl = imageUrl(row.imageUrl);
     }
 
     for (const type of ACCESS_TYPES) {

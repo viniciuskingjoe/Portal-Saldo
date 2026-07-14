@@ -49,6 +49,16 @@ export const stockSqlSchema = {
     },
     activeStatus: 1,
   },
+  productImage: {
+    table: { database: "PORTAL_CLIENTE", schema: "dbo", name: "B2B_PRODUTO_IMAGEM" },
+    cloudFrontBaseUrl: "https://dfcl9ybffzusy.cloudfront.net/",
+    columns: {
+      product: "PRODUTO",
+      color: "COR_PRODUTO",
+      position: "POSICAO",
+      image: "IMAGEM",
+    },
+  },
   maxRows: 50000,
   onlyPositiveStock: true,
 } as const;

@@ -55,7 +55,8 @@ chmod 600 .env
 ```
 
 O usuário SQL precisa de `SELECT` em `king_estoque_disponiel`, `PRODUTOS_TAMANHOS`
-e cross-database em `PORTAL_CLIENTE.dbo.B2B_PRODUTO` / `B2B_POLITICA_COMERCIAL`.
+e cross-database em `PORTAL_CLIENTE.dbo.B2B_PRODUTO`, `B2B_POLITICA_COMERCIAL`
+e `B2B_PRODUTO_IMAGEM`.
 
 ---
 
@@ -162,5 +163,7 @@ sudo systemctl restart portal-saldo
 - A query de estoque roda subqueries `EXISTS` (uma por tipo de política) por linha,
   com `TOP 50000`. Se ficar lento, indexe no SQL Server:
   `B2B_PRODUTO(PRODUTO, COR)` e `B2B_POLITICA_COMERCIAL(ID_POLITICA_COMERCIAL, TIPO_ACESSO, STATUS)`.
+- As imagens vêm de `PORTAL_CLIENTE.dbo.B2B_PRODUTO_IMAGEM.IMAGEM` e são servidas por
+  `https://dfcl9ybffzusy.cloudfront.net/`.
 - App faz auto-refresh a cada 30s no navegador; cada refresh reconsulta o banco.
 - Sem autenticação: mantenha exposto **só na rede interna**.
