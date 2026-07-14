@@ -1,4 +1,4 @@
-import type { AccessKey, Product } from "@/lib/stock-types";
+import type { AccessKey, Product, ProductImageInfo } from "@/lib/stock-types";
 import { ACCESS_TYPES } from "@/lib/stock-types";
 
 import { getSqlPool } from "./sql-server";
@@ -21,7 +21,7 @@ type StockRow = {
   subgroup: unknown;
   collection: unknown;
   brand: unknown;
-  imageUrl: unknown;
+  imageJson: unknown;
   grade: unknown;
   colorCode: unknown;
   colorDescription: unknown;
@@ -32,6 +32,11 @@ type StockRow = {
 type StockApiPayload = {
   products: Product[];
   updatedAt: string;
+};
+
+type StockImageRow = {
+  position?: unknown;
+  image?: unknown;
 };
 
 function text(value: unknown, fallback = ""): string {
@@ -77,6 +82,23 @@ function imageUrl(value: unknown): string | undefined {
   return new URL(imagePath, normalizedBaseUrl).toString();
 }
 
+function parseImageRows(value: unknown): StockImageRow[] {
+  if (typeof value !== "string" || !value.trim()) return [];
+
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return Array.isArray(parsed) ? (parsed as StockImageRow[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function addProductImage(product: Product, image: ProductImageInfo): void {
+  if (product.images.some((item) => item.url === image.url)) return;
+  product.images.push(image);
+  product.imageUrl ??= image.url;
+}
+
 function buildAccessFlagColumn(accessCode: string, alias: string): string {
   const { accessPolicy } = stockSqlSchema;
   const product = sqlTableName(accessPolicy.productTable);
@@ -113,17 +135,21 @@ function buildImageApply(): string {
 
   return `
     OUTER APPLY (
-      SELECT TOP (1)
-        img.${sqlIdentifier(col.image)} AS [imageUrl]
-      FROM ${table} img
-      WHERE img.${sqlIdentifier(col.product)} COLLATE DATABASE_DEFAULT
-          = ${stockColumn("reference")} COLLATE DATABASE_DEFAULT
-        AND img.${sqlIdentifier(col.color)} COLLATE DATABASE_DEFAULT
-          = ${stockColumn("colorCode")} COLLATE DATABASE_DEFAULT
-        AND NULLIF(LTRIM(RTRIM(img.${sqlIdentifier(col.image)})), '') IS NOT NULL
-      ORDER BY
-        CASE WHEN img.${sqlIdentifier(col.position)} = 1 THEN 0 ELSE 1 END,
-        img.${sqlIdentifier(col.position)}
+      SELECT (
+        SELECT
+          img.${sqlIdentifier(col.position)} AS [position],
+          img.${sqlIdentifier(col.image)} AS [image]
+        FROM ${table} img
+        WHERE img.${sqlIdentifier(col.product)} COLLATE DATABASE_DEFAULT
+            = ${stockColumn("reference")} COLLATE DATABASE_DEFAULT
+          AND img.${sqlIdentifier(col.color)} COLLATE DATABASE_DEFAULT
+            = ${stockColumn("colorCode")} COLLATE DATABASE_DEFAULT
+          AND NULLIF(LTRIM(RTRIM(img.${sqlIdentifier(col.image)})), '') IS NOT NULL
+        ORDER BY
+          CASE WHEN img.${sqlIdentifier(col.position)} = 1 THEN 0 ELSE 1 END,
+          img.${sqlIdentifier(col.position)}
+        FOR JSON PATH
+      ) AS [imageJson]
     ) product_image`;
 }
 
@@ -147,7 +173,7 @@ function buildStockQuery(): string {
       ${stockColumn("subgroup")} AS [subgroup],
       ${stockColumn("collection")} AS [collection],
       ${stockColumn("brand")} AS [brand],
-      product_image.[imageUrl] AS [imageUrl],
+      product_image.[imageJson] AS [imageJson],
       ${stockColumn("grade")} AS [grade],
       ${stockColumn("colorCode")} AS [colorCode],
       ${stockColumn("colorDescription")} AS [colorDescription],
@@ -197,14 +223,12 @@ function mapRowsToProducts(rows: StockRow[]): Product[] {
         subgroup: text(row.subgroup, "Sem subgrupo"),
         collection: text(row.collection, "Sem colecao"),
         brand: text(row.brand, "Sem griffe"),
-        imageUrl: imageUrl(row.imageUrl),
+        images: [],
         access: emptyAccess(),
         totalQuantity: 0,
         colors: [],
       };
       products.set(reference, product);
-    } else if (!product.imageUrl) {
-      product.imageUrl = imageUrl(row.imageUrl);
     }
 
     for (const type of ACCESS_TYPES) {
@@ -224,9 +248,28 @@ function mapRowsToProducts(rows: StockRow[]): Product[] {
         description,
         name,
         total: 0,
+        images: [],
         sizes: {},
       };
       product.colors.push(color);
+    }
+
+    for (const imageRow of parseImageRows(row.imageJson)) {
+      const url = imageUrl(imageRow.image);
+      if (!url) continue;
+
+      const image: ProductImageInfo = {
+        url,
+        colorCode: code,
+        colorDescription: description,
+        colorName: name,
+        position: number(imageRow.position),
+      };
+
+      if (!color.images.some((item) => item.url === image.url)) {
+        color.images.push(image);
+      }
+      addProductImage(product, image);
     }
 
     for (let index = 0; index < row.quantities.length; index += 1) {

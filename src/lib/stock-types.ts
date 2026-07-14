@@ -13,7 +13,16 @@ export interface ColorStock {
   description: string;
   name: string;
   total: number;
+  images: ProductImageInfo[];
   sizes: Record<string, number>;
+}
+
+export interface ProductImageInfo {
+  url: string;
+  colorCode: string;
+  colorDescription: string;
+  colorName: string;
+  position: number;
 }
 
 export interface Product {
@@ -24,6 +33,7 @@ export interface Product {
   brand: string;
   access: Record<AccessKey, boolean>;
   imageUrl?: string;
+  images: ProductImageInfo[];
   totalQuantity: number;
   colors: ColorStock[];
 }

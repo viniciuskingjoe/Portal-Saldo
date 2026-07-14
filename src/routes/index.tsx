@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import {
   Check,
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
   Filter,
   Grid3x3,
@@ -14,7 +15,7 @@ import {
 } from "lucide-react";
 
 import { Toaster } from "@/components/ui/sonner";
-import type { Filters, Product, SortKey, ViewMode } from "@/lib/stock-types";
+import type { Filters, Product, ProductImageInfo, SortKey, ViewMode } from "@/lib/stock-types";
 import { ACCESS_TYPES } from "@/lib/stock-types";
 import { formatNum, formatTime } from "@/lib/format";
 
@@ -149,6 +150,31 @@ function proxiedDisplayImageUrl(src?: string): string | undefined {
   }
 }
 
+function productImages(product: Product): ProductImageInfo[] {
+  const images = Array.isArray(product.images)
+    ? product.images.filter((image) => image.url.trim())
+    : [];
+
+  if (images.length) return images;
+
+  return product.imageUrl
+    ? [
+        {
+          url: product.imageUrl,
+          colorCode: "",
+          colorDescription: "",
+          colorName: "",
+          position: 1,
+        },
+      ]
+    : [];
+}
+
+function imageLabel(image?: ProductImageInfo): string {
+  if (!image) return "";
+  return image.colorName || image.colorDescription || image.colorCode || "Imagem";
+}
+
 function PortalPage() {
   const resultsTopRef = useRef<HTMLDivElement | null>(null);
   const didRenderPageRef = useRef(false);
@@ -167,7 +193,10 @@ function PortalPage() {
   const [openFilter, setOpenFilter] = useState<FilterKey | null>(null);
   const [filterSearch, setFilterSearch] = useState("");
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
-  const [viewingImageRef, setViewingImageRef] = useState<string | null>(null);
+  const [viewingImage, setViewingImage] = useState<{
+    reference: string;
+    index: number;
+  } | null>(null);
 
   const loadStock = useCallback(async (silent = false) => {
     try {
@@ -218,15 +247,15 @@ function PortalPage() {
   }, [filtersOpen]);
 
   useEffect(() => {
-    if (!viewingImageRef) return;
+    if (!viewingImage) return;
 
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setViewingImageRef(null);
+      if (event.key === "Escape") setViewingImage(null);
     };
 
     window.addEventListener("keydown", closeOnEscape);
     return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [viewingImageRef]);
+  }, [viewingImage]);
 
   useEffect(() => {
     void loadStock(true);
@@ -334,7 +363,9 @@ function PortalPage() {
     setPage(1);
   };
 
-  const viewingImageProduct = products.find((product) => product.reference === viewingImageRef);
+  const viewingImageProduct = products.find(
+    (product) => product.reference === viewingImage?.reference,
+  );
 
   return (
     <div className="min-h-screen bg-background pb-32">
@@ -533,9 +564,7 @@ function PortalPage() {
               <ProductCard
                 key={p.reference}
                 product={p}
-                onViewImage={() => {
-                  if (p.imageUrl) setViewingImageRef(p.reference);
-                }}
+                onViewImage={(index) => setViewingImage({ reference: p.reference, index })}
               />
             ))}
           </div>
@@ -544,9 +573,11 @@ function PortalPage() {
             items={pageItems}
             expandedRow={expandedRow}
             setExpandedRow={setExpandedRow}
-            onViewImage={(reference) => {
+            onViewImage={(reference, index) => {
               const product = products.find((item) => item.reference === reference);
-              if (product?.imageUrl) setViewingImageRef(reference);
+              if (product && productImages(product).length > 0) {
+                setViewingImage({ reference, index });
+              }
             }}
           />
         )}
@@ -592,10 +623,11 @@ function PortalPage() {
         )}
       </main>
 
-      {viewingImageProduct?.imageUrl && (
+      {viewingImageProduct && productImages(viewingImageProduct).length > 0 && (
         <ProductImageViewerDialog
           product={viewingImageProduct}
-          onClose={() => setViewingImageRef(null)}
+          initialIndex={viewingImage?.index ?? 0}
+          onClose={() => setViewingImage(null)}
         />
       )}
     </div>
@@ -768,11 +800,30 @@ function ProductImage({
 
 function ProductImageViewerDialog({
   product,
+  initialIndex,
   onClose,
 }: {
   product: Product;
+  initialIndex: number;
   onClose: () => void;
 }) {
+  const images = productImages(product);
+  const [imageIndex, setImageIndex] = useState(initialIndex);
+  const currentIndex = Math.min(Math.max(imageIndex, 0), Math.max(images.length - 1, 0));
+  const currentImage = images[currentIndex];
+  const hasMultipleImages = images.length > 1;
+
+  useEffect(() => {
+    setImageIndex(initialIndex);
+  }, [initialIndex, product.reference]);
+
+  const moveImage = (direction: -1 | 1) => {
+    if (!hasMultipleImages) return;
+    setImageIndex((current) => (current + direction + images.length) % images.length);
+  };
+
+  if (!currentImage) return null;
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
@@ -796,6 +847,16 @@ function ProductImageViewerDialog({
               <span className="rounded border border-border px-1.5 py-0.5">
                 {product.subgroup}
               </span>
+              {imageLabel(currentImage) && (
+                <span className="rounded border border-border px-1.5 py-0.5">
+                  {imageLabel(currentImage)}
+                </span>
+              )}
+              {hasMultipleImages && (
+                <span className="rounded border border-border px-1.5 py-0.5 tabular-nums">
+                  {currentIndex + 1}/{images.length}
+                </span>
+              )}
             </div>
           </div>
           <button
@@ -808,14 +869,34 @@ function ProductImageViewerDialog({
           </button>
         </div>
 
-        <div className="flex min-h-0 flex-1 items-center justify-center bg-muted">
+        <div className="relative flex min-h-0 flex-1 items-center justify-center bg-muted">
           <ProductImage
-            src={product.imageUrl}
+            src={currentImage.url}
             alt={product.reference}
             flush
             fit="contain"
             className="h-[72vh] w-full"
           />
+          {hasMultipleImages && (
+            <>
+              <button
+                type="button"
+                onClick={() => moveImage(-1)}
+                className="absolute top-1/2 left-4 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-background/90 text-foreground shadow hover:bg-background"
+                aria-label="Imagem anterior"
+              >
+                <ChevronLeft className="h-6 w-6" />
+              </button>
+              <button
+                type="button"
+                onClick={() => moveImage(1)}
+                className="absolute top-1/2 right-4 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-background/90 text-foreground shadow hover:bg-background"
+                aria-label="Próxima imagem"
+              >
+                <ChevronRight className="h-6 w-6" />
+              </button>
+            </>
+          )}
         </div>
       </div>
     </div>
@@ -827,9 +908,23 @@ function ProductCard({
   onViewImage,
 }: {
   product: Product;
-  onViewImage: () => void;
+  onViewImage: (index: number) => void;
 }) {
   const allSizes = useMemo(() => availableSizes(product), [product]);
+  const images = productImages(product);
+  const [imageIndex, setImageIndex] = useState(0);
+  const currentIndex = Math.min(Math.max(imageIndex, 0), Math.max(images.length - 1, 0));
+  const currentImage = images[currentIndex];
+  const hasMultipleImages = images.length > 1;
+
+  useEffect(() => {
+    setImageIndex(0);
+  }, [product.reference, images.length]);
+
+  const moveImage = (direction: -1 | 1) => {
+    if (!hasMultipleImages) return;
+    setImageIndex((current) => (current + direction + images.length) % images.length);
+  };
 
   return (
     <article className="overflow-hidden rounded-lg border border-border bg-card transition">
@@ -837,25 +932,53 @@ function ProductCard({
         <div className="relative h-64 bg-muted md:h-full">
           <button
             type="button"
-            onClick={onViewImage}
-            disabled={!product.imageUrl}
+            onClick={() => onViewImage(currentIndex)}
+            disabled={!currentImage}
             className={`block h-full w-full ${
-              product.imageUrl ? "cursor-zoom-in" : "cursor-default"
+              currentImage ? "cursor-zoom-in" : "cursor-default"
             }`}
             aria-label={
-              product.imageUrl
+              currentImage
                 ? `Ampliar imagem de ${product.reference}`
                 : `Produto ${product.reference} sem imagem`
             }
           >
             <ProductImage
-              src={product.imageUrl}
+              src={currentImage?.url}
               alt={product.reference}
               flush
               fit="contain"
               className="h-full w-full"
             />
           </button>
+          {hasMultipleImages && (
+            <>
+              <button
+                type="button"
+                onClick={() => moveImage(-1)}
+                className="absolute top-1/2 left-2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-background/90 text-foreground shadow hover:bg-background"
+                aria-label="Imagem anterior"
+              >
+                <ChevronLeft className="h-5 w-5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => moveImage(1)}
+                className="absolute top-1/2 right-2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-background/90 text-foreground shadow hover:bg-background"
+                aria-label="Próxima imagem"
+              >
+                <ChevronRight className="h-5 w-5" />
+              </button>
+              <div className="pointer-events-none absolute right-2 bottom-2 left-2 flex items-end justify-between gap-2">
+                <span className="min-w-0 truncate rounded bg-background/90 px-2 py-1 text-[11px] font-semibold text-foreground shadow">
+                  {imageLabel(currentImage)}
+                </span>
+                <span className="shrink-0 rounded bg-background/90 px-2 py-1 text-[11px] font-semibold tabular-nums text-foreground shadow">
+                  {currentIndex + 1}/{images.length}
+                </span>
+              </div>
+            </>
+          )}
         </div>
 
         <div className="flex min-h-0 min-w-0 flex-col gap-3 p-4 sm:p-5">
@@ -949,7 +1072,7 @@ function ProductTable({
   items: Product[];
   expandedRow: string | null;
   setExpandedRow: (r: string | null) => void;
-  onViewImage: (ref: string) => void;
+  onViewImage: (ref: string, index: number) => void;
 }) {
   return (
     <div className="overflow-x-auto rounded-lg border border-border bg-card">
@@ -970,6 +1093,9 @@ function ProductTable({
           {items.map((p) => {
             const expanded = expandedRow === p.reference;
             const allSizes = availableSizes(p);
+            const images = productImages(p);
+            const thumbnail = images[0];
+            const extraImages = Math.max(0, images.length - 1);
             return (
               <Fragment key={p.reference}>
                 <tr className="border-t border-border">
@@ -985,20 +1111,25 @@ function ProductTable({
                   <td className="p-3">
                     <button
                       type="button"
-                      onClick={() => onViewImage(p.reference)}
-                      disabled={!p.imageUrl}
-                      className={`block ${p.imageUrl ? "cursor-zoom-in" : "cursor-default"}`}
+                      onClick={() => onViewImage(p.reference, 0)}
+                      disabled={!thumbnail}
+                      className={`relative block ${thumbnail ? "cursor-zoom-in" : "cursor-default"}`}
                       aria-label={
-                        p.imageUrl
+                        thumbnail
                           ? `Ampliar imagem de ${p.reference}`
                           : `Produto ${p.reference} sem imagem`
                       }
                     >
                       <ProductImage
-                        src={p.imageUrl}
+                        src={thumbnail?.url}
                         alt={p.reference}
                         className="h-12 w-12"
                       />
+                      {extraImages > 0 && (
+                        <span className="absolute -right-1 -bottom-1 rounded bg-primary px-1.5 py-0.5 text-[10px] font-semibold text-primary-foreground shadow">
+                          +{extraImages}
+                        </span>
+                      )}
                     </button>
                   </td>
                   <td className="p-3 font-bold">{p.reference}</td>
