@@ -949,8 +949,8 @@ function ProductCard({
 
   return (
     <article className="overflow-hidden rounded-lg border border-border/80 bg-card shadow-sm transition hover:border-border hover:shadow-md">
-      <div className="grid grid-cols-1 md:h-[400px] md:grid-cols-[280px_minmax(0,1fr)]">
-        <div className="relative h-80 bg-white md:h-full">
+      <div className="grid grid-cols-1 md:min-h-[400px] md:grid-cols-[280px_minmax(0,1fr)]">
+        <div className="relative h-80 bg-white md:h-auto md:min-h-[400px]">
           <button
             type="button"
             onClick={() => onViewImage(currentIndex)}
@@ -1002,7 +1002,7 @@ function ProductCard({
           )}
         </div>
 
-        <div className="flex min-h-0 min-w-0 flex-col gap-3 p-4 sm:p-5">
+        <div className="flex min-w-0 flex-col gap-3 p-4 sm:p-5">
           <div className="grid shrink-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-4">
             <div className="min-w-0">
               <h3 className="text-xl font-extrabold tracking-tight">{product.reference}</h3>
@@ -1049,7 +1049,7 @@ function ProductCard({
             </div>
           </div>
 
-          <div className="min-h-0 flex-1 overflow-auto rounded-md border border-border/70">
+          <div className="max-h-[260px] overflow-auto rounded-md border border-border/70 md:max-h-[270px]">
             <table className="w-full min-w-max text-xs">
               <thead className="sticky top-0 z-10 bg-card">
                 <tr className="border-b border-border text-left text-muted-foreground">
