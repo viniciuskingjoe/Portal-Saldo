@@ -10,6 +10,7 @@ import {
   Grid3x3,
   ImageOff,
   LayoutList,
+  RefreshCw,
   Search,
   X,
 } from "lucide-react";
@@ -368,89 +369,123 @@ function PortalPage() {
   );
 
   return (
-    <div className="min-h-screen bg-background pb-32">
+    <div className="min-h-screen bg-background pb-24">
       <Toaster position="top-right" />
 
-      {/* Header */}
-      <header className="sticky top-0 z-30 border-b border-border bg-background/95 backdrop-blur">
-        <div className="mx-auto max-w-[1600px] px-4 py-4 sm:px-6">
+      <header className="sticky top-0 z-30 border-b border-border/80 bg-background/90 backdrop-blur">
+        <div className="mx-auto flex max-w-[1600px] items-center justify-between gap-4 px-4 py-3 sm:px-6">
           <div className="min-w-0">
-            <h1 className="truncate text-xl font-extrabold tracking-tight sm:text-2xl">
+            <h1 className="truncate text-lg font-extrabold tracking-tight sm:text-xl">
               Portal Saldo Estoque
             </h1>
-            <p className="truncate text-xs text-muted-foreground sm:text-sm">
-              Consulta interna de disponibilidade
+            <p className="truncate text-xs text-muted-foreground">
+              Disponibilidade interna por referência, cor e tamanho
             </p>
           </div>
+          <button
+            type="button"
+            onClick={refresh}
+            className="inline-flex h-9 shrink-0 items-center gap-2 rounded-md border border-border bg-card px-3 text-xs font-semibold text-foreground shadow-sm transition hover:bg-muted"
+          >
+            <RefreshCw className="h-3.5 w-3.5" />
+            Atualizar
+          </button>
         </div>
       </header>
 
-      <main className="mx-auto max-w-[1600px] px-4 py-6 sm:px-6">
-        {/* Dashboard */}
-        <section className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-5">
-          <SummaryCard label="Peças" value={formatNum(summary.pieces)} />
-          <SummaryCard label="Referências" value={formatNum(summary.refs)} />
-          <SummaryCard label="Griffes" value={formatNum(summary.brands)} />
-          <SummaryCard label="Coleções" value={formatNum(summary.collections)} />
-          <SummaryCard
-            label="Última atualização"
-            value={lastUpdateText}
-            small
-          />
-        </section>
-
-        {/* Search */}
-        <section className="mb-4">
-          <div className="relative">
-            <Search className="pointer-events-none absolute top-1/2 left-4 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <input
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-              placeholder="Buscar por referência ou descrição..."
-              className="w-full rounded-lg border border-border bg-card py-3 pr-10 pl-11 text-sm outline-none transition focus:border-foreground"
-            />
-            {searchInput && (
-              <button
-                onClick={() => setSearchInput("")}
-                className="absolute top-1/2 right-3 -translate-y-1/2 rounded p-1 text-muted-foreground hover:bg-muted"
-                aria-label="Limpar busca"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            )}
-          </div>
-        </section>
-
-        {/* Filters */}
-        <section className="mb-4">
-          <div className="flex items-center justify-between gap-2">
-            <button
-              onClick={() => setFiltersOpen((v) => !v)}
-              className="inline-flex items-center gap-2 rounded-md border border-border bg-card px-3 py-2 text-sm font-medium hover:bg-muted"
-            >
-              <Filter className="h-4 w-4" />
-              Filtros
-              {activeFilterCount > 0 && (
-                <span className="ml-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[11px] font-semibold text-primary-foreground">
-                  {activeFilterCount}
-                </span>
-              )}
-              <ChevronDown
-                className={`h-4 w-4 transition ${filtersOpen ? "rotate-180" : ""}`}
+      <main className="mx-auto max-w-[1600px] px-4 py-5 sm:px-6">
+        <section className="mb-5 rounded-lg border border-border/80 bg-card p-4 shadow-sm">
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_auto]">
+            <div className="relative">
+              <Search className="pointer-events-none absolute top-1/2 left-4 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <input
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+                placeholder="Buscar por referência ou descrição..."
+                className="h-11 w-full rounded-md border border-input bg-background pr-10 pl-11 text-sm outline-none transition focus:border-ring focus:ring-2 focus:ring-ring/15"
               />
-            </button>
-            {activeFilterCount > 0 && (
+              {searchInput && (
+                <button
+                  onClick={() => setSearchInput("")}
+                  className="absolute top-1/2 right-3 -translate-y-1/2 rounded p-1 text-muted-foreground hover:bg-muted"
+                  aria-label="Limpar busca"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              )}
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-5 xl:w-[680px]">
+              <SummaryCard label="Peças" value={formatNum(summary.pieces)} />
+              <SummaryCard label="Referências" value={formatNum(summary.refs)} />
+              <SummaryCard label="Griffes" value={formatNum(summary.brands)} />
+              <SummaryCard label="Coleções" value={formatNum(summary.collections)} />
+              <SummaryCard label="Atualizado" value={lastUpdateText} small />
+            </div>
+          </div>
+
+          <div className="mt-4 flex flex-col gap-3 border-t border-border/70 pt-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="text-sm text-muted-foreground">
+              <span className="font-semibold text-foreground">
+                {formatNum(sorted.length)} referências filtradas
+              </span>{" "}
+              de {formatNum(products.length)}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
               <button
-                onClick={clearFilters}
-                className="text-xs text-muted-foreground underline-offset-4 hover:underline"
+                onClick={() => setFiltersOpen((v) => !v)}
+                className="inline-flex h-9 items-center gap-2 rounded-md border border-border bg-background px-3 text-xs font-semibold shadow-sm transition hover:bg-muted sm:text-sm"
               >
-                Limpar filtros
+                <Filter className="h-4 w-4" />
+                Filtros
+                {activeFilterCount > 0 && (
+                  <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[11px] font-semibold text-primary-foreground">
+                    {activeFilterCount}
+                  </span>
+                )}
+                <ChevronDown className={`h-4 w-4 transition ${filtersOpen ? "rotate-180" : ""}`} />
               </button>
-            )}
+              {activeFilterCount > 0 && (
+                <button
+                  onClick={clearFilters}
+                  className="h-9 rounded-md px-2 text-xs font-semibold text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+                >
+                  Limpar filtros
+                </button>
+              )}
+            <select
+              value={sort}
+              onChange={(e) => setSort(e.target.value as SortKey)}
+              className="h-9 rounded-md border border-border bg-background px-3 text-xs font-semibold outline-none focus:border-ring sm:text-sm"
+            >
+              {Object.entries(SORT_LABELS).map(([k, v]) => (
+                <option key={k} value={k}>{v}</option>
+              ))}
+            </select>
+            <div className="inline-flex h-9 overflow-hidden rounded-md border border-border bg-background shadow-sm">
+              <button
+                onClick={() => setView("cards")}
+                className={`inline-flex items-center gap-1.5 px-3 text-xs font-semibold transition ${
+                  view === "cards" ? "bg-primary text-primary-foreground" : "bg-card hover:bg-muted"
+                }`}
+              >
+                <Grid3x3 className="h-3.5 w-3.5" /> Cards
+              </button>
+              <button
+                onClick={() => setView("table")}
+                className={`inline-flex items-center gap-1.5 px-3 text-xs font-semibold transition ${
+                  view === "table" ? "bg-primary text-primary-foreground" : "bg-card hover:bg-muted"
+                }`}
+              >
+                <LayoutList className="h-3.5 w-3.5" /> Tabela
+              </button>
+            </div>
+          </div>
           </div>
 
           {filtersOpen && (
-            <div className="mt-3 rounded-lg border border-border bg-card p-3">
+            <div className="mt-4 rounded-md border border-border/80 bg-background p-3">
               <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
                 {FILTERS.map((filter) => (
                   <FilterDropdown
@@ -489,45 +524,6 @@ function PortalPage() {
               ))}
             </div>
           )}
-        </section>
-
-        {/* Toolbar */}
-        <section className="mb-4 grid grid-cols-1 items-center gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
-          <div className="text-sm text-muted-foreground">
-            <span className="font-semibold text-foreground">
-              {formatNum(summary.refs)} referências
-            </span>{" "}
-            · {formatNum(summary.pieces)} peças em estoque
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <select
-              value={sort}
-              onChange={(e) => setSort(e.target.value as SortKey)}
-              className="rounded-md border border-border bg-card px-3 py-2 text-xs font-medium outline-none focus:border-foreground sm:text-sm"
-            >
-              {Object.entries(SORT_LABELS).map(([k, v]) => (
-                <option key={k} value={k}>{v}</option>
-              ))}
-            </select>
-            <div className="inline-flex overflow-hidden rounded-md border border-border">
-              <button
-                onClick={() => setView("cards")}
-                className={`inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium transition ${
-                  view === "cards" ? "bg-primary text-primary-foreground" : "bg-card hover:bg-muted"
-                }`}
-              >
-                <Grid3x3 className="h-3.5 w-3.5" /> Cards
-              </button>
-              <button
-                onClick={() => setView("table")}
-                className={`inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium transition ${
-                  view === "table" ? "bg-primary text-primary-foreground" : "bg-card hover:bg-muted"
-                }`}
-              >
-                <LayoutList className="h-3.5 w-3.5" /> Tabela
-              </button>
-            </div>
-          </div>
         </section>
 
         {/* Results */}
@@ -584,7 +580,7 @@ function PortalPage() {
 
         {/* Pagination */}
         {sorted.length > 0 && (
-          <div className="mt-6 grid grid-cols-1 items-center gap-3 sm:grid-cols-[auto_minmax(0,1fr)_auto]">
+          <div className="mt-6 grid grid-cols-1 items-center gap-3 rounded-lg border border-border/80 bg-card px-4 py-3 shadow-sm sm:grid-cols-[auto_minmax(0,1fr)_auto]">
             <div className="text-xs text-muted-foreground">
               Página {currentPage} de {totalPages}
             </div>
@@ -592,14 +588,14 @@ function PortalPage() {
               <button
                 disabled={currentPage === 1}
                 onClick={() => setPage(Math.max(1, currentPage - 1))}
-                className="rounded-md border border-border px-3 py-1.5 text-xs disabled:opacity-40"
+                className="rounded-md border border-border bg-background px-3 py-1.5 text-xs font-semibold shadow-sm hover:bg-muted disabled:opacity-40"
               >
                 Anterior
               </button>
               <button
                 disabled={currentPage === totalPages}
                 onClick={() => setPage(Math.min(totalPages, currentPage + 1))}
-                className="rounded-md border border-border px-3 py-1.5 text-xs disabled:opacity-40"
+                className="rounded-md border border-border bg-background px-3 py-1.5 text-xs font-semibold shadow-sm hover:bg-muted disabled:opacity-40"
               >
                 Próxima
               </button>
@@ -612,7 +608,7 @@ function PortalPage() {
                   setPageSize(Number(e.target.value));
                   setPage(1);
                 }}
-                className="rounded-md border border-border bg-card px-2 py-1 text-xs"
+                className="rounded-md border border-border bg-background px-2 py-1 text-xs font-semibold"
               >
                 {PAGE_SIZE_OPTIONS.map((n) => (
                   <option key={n} value={n}>{n}</option>
@@ -638,11 +634,13 @@ function PortalPage() {
 
 function SummaryCard({ label, value, small }: { label: string; value: string; small?: boolean }) {
   return (
-    <div className="rounded-lg border border-border bg-card p-4">
-      <div className="text-[11px] font-semibold tracking-wider text-muted-foreground uppercase">
+    <div className="rounded-md border border-border/70 bg-muted/45 px-3 py-2">
+      <div className="text-[10px] font-semibold tracking-wider text-muted-foreground uppercase">
         {label}
       </div>
-      <div className={`mt-1 font-extrabold ${small ? "text-lg" : "text-2xl"}`}>{value}</div>
+      <div className={`mt-0.5 truncate font-extrabold ${small ? "text-base" : "text-xl"}`}>
+        {value}
+      </div>
     </div>
   );
 }
@@ -651,7 +649,7 @@ function Chip({ label, onRemove }: { label: string; onRemove: () => void }) {
   return (
     <button
       onClick={onRemove}
-      className="inline-flex items-center gap-1.5 rounded-full bg-primary px-3 py-1 text-xs font-medium text-primary-foreground hover:opacity-90"
+      className="inline-flex items-center gap-1.5 rounded-full border border-border bg-background px-3 py-1 text-xs font-semibold text-foreground shadow-sm hover:bg-muted"
     >
       {label}
       <X className="h-3 w-3" />
@@ -690,8 +688,8 @@ function FilterDropdown({
       <button
         type="button"
         onClick={() => onOpenChange(!open)}
-        className={`flex h-10 w-full items-center justify-between gap-2 rounded-md border px-3 text-sm font-medium transition ${
-          open ? "border-foreground bg-background" : "border-border bg-background hover:bg-muted"
+        className={`flex h-10 w-full items-center justify-between gap-2 rounded-md border px-3 text-sm font-semibold transition ${
+          open ? "border-ring bg-card ring-2 ring-ring/10" : "border-border bg-card hover:bg-muted"
         }`}
       >
         <span className="truncate">{label}</span>
@@ -706,7 +704,7 @@ function FilterDropdown({
       </button>
 
       {open && (
-        <div className="absolute left-0 z-40 mt-1 w-full min-w-72 rounded-md border border-border bg-background shadow-lg">
+        <div className="absolute left-0 z-40 mt-1 w-full min-w-72 rounded-md border border-border bg-card shadow-xl">
           <div className="relative border-b border-border">
             <Search className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <input
@@ -714,7 +712,7 @@ function FilterDropdown({
               onChange={(event) => onSearchChange(event.target.value)}
               placeholder={placeholder}
               autoFocus
-              className="h-10 w-full rounded-t-md bg-background pr-3 pl-9 text-sm outline-none"
+              className="h-10 w-full rounded-t-md bg-card pr-3 pl-9 text-sm outline-none"
             />
           </div>
 
@@ -727,7 +725,7 @@ function FilterDropdown({
                   key={option}
                   onClick={() => onToggle(option)}
                   className={`flex w-full items-center gap-2 rounded px-2 py-2 text-left text-sm transition ${
-                    on ? "bg-muted font-semibold" : "hover:bg-muted"
+                    on ? "bg-accent font-semibold text-accent-foreground" : "hover:bg-muted"
                   }`}
                 >
                   <span
@@ -776,7 +774,7 @@ function ProductImage({
   if (!displaySrc || failed) {
     return (
       <div
-        className={`flex items-center justify-center bg-muted text-muted-foreground ${
+        className={`flex items-center justify-center bg-muted/70 text-muted-foreground ${
           flush ? "" : "rounded-md border border-dashed border-border"
         } ${className ?? ""}`}
       >
@@ -791,7 +789,7 @@ function ProductImage({
       alt={alt}
       loading="lazy"
       onError={() => setFailed(true)}
-      className={`${flush ? "" : "rounded-md"} ${
+      className={`${flush ? "" : "rounded-md"} bg-white ${
         fit === "contain" ? "object-contain" : "object-cover"
       } ${className ?? ""}`}
     />
@@ -826,14 +824,14 @@ function ProductImageViewerDialog({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-4"
       onClick={onClose}
     >
       <div
-        className="flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-lg border border-border bg-background shadow-xl"
+        className="flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-lg border border-white/10 bg-background shadow-2xl"
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="flex items-start justify-between gap-3 border-b border-border p-4">
+        <div className="flex items-start justify-between gap-3 border-b border-border/80 p-4">
           <div className="min-w-0">
             <h2 className="truncate text-base font-extrabold">{product.reference}</h2>
             <p className="truncate text-sm text-muted-foreground">{product.description}</p>
@@ -869,7 +867,7 @@ function ProductImageViewerDialog({
           </button>
         </div>
 
-        <div className="relative flex min-h-0 flex-1 items-center justify-center bg-muted">
+        <div className="relative flex min-h-0 flex-1 items-center justify-center bg-muted/80">
           <ProductImage
             src={currentImage.url}
             alt={product.reference}
@@ -882,7 +880,7 @@ function ProductImageViewerDialog({
               <button
                 type="button"
                 onClick={() => moveImage(-1)}
-                className="absolute top-1/2 left-4 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-background/90 text-foreground shadow hover:bg-background"
+                className="absolute top-1/2 left-4 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-background/90 text-foreground shadow-lg ring-1 ring-border/80 hover:bg-background"
                 aria-label="Imagem anterior"
               >
                 <ChevronLeft className="h-6 w-6" />
@@ -890,11 +888,34 @@ function ProductImageViewerDialog({
               <button
                 type="button"
                 onClick={() => moveImage(1)}
-                className="absolute top-1/2 right-4 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-background/90 text-foreground shadow hover:bg-background"
+                className="absolute top-1/2 right-4 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-background/90 text-foreground shadow-lg ring-1 ring-border/80 hover:bg-background"
                 aria-label="Próxima imagem"
               >
                 <ChevronRight className="h-6 w-6" />
               </button>
+              <div className="absolute right-4 bottom-4 left-4 flex justify-center">
+                <div className="flex max-w-full gap-2 overflow-x-auto rounded-md bg-background/90 p-2 shadow-lg ring-1 ring-border/80">
+                  {images.map((image, index) => (
+                    <button
+                      key={`${image.url}-${index}`}
+                      type="button"
+                      onClick={() => setImageIndex(index)}
+                      className={`relative h-14 w-14 shrink-0 overflow-hidden rounded border ${
+                        index === currentIndex ? "border-primary ring-2 ring-primary/25" : "border-border"
+                      }`}
+                      aria-label={`Abrir ${imageLabel(image)}`}
+                    >
+                      <ProductImage
+                        src={image.url}
+                        alt={imageLabel(image)}
+                        flush
+                        fit="cover"
+                        className="h-full w-full"
+                      />
+                    </button>
+                  ))}
+                </div>
+              </div>
             </>
           )}
         </div>
@@ -927,9 +948,9 @@ function ProductCard({
   };
 
   return (
-    <article className="overflow-hidden rounded-lg border border-border bg-card transition">
-      <div className="grid grid-cols-1 md:h-[340px] md:grid-cols-[220px_minmax(0,1fr)]">
-        <div className="relative h-64 bg-muted md:h-full">
+    <article className="overflow-hidden rounded-lg border border-border/80 bg-card shadow-sm transition hover:border-border hover:shadow-md">
+      <div className="grid grid-cols-1 md:h-[400px] md:grid-cols-[280px_minmax(0,1fr)]">
+        <div className="relative h-80 bg-white md:h-full">
           <button
             type="button"
             onClick={() => onViewImage(currentIndex)}
@@ -956,7 +977,7 @@ function ProductCard({
               <button
                 type="button"
                 onClick={() => moveImage(-1)}
-                className="absolute top-1/2 left-2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-background/90 text-foreground shadow hover:bg-background"
+                className="absolute top-1/2 left-3 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-background/90 text-foreground shadow ring-1 ring-border/70 hover:bg-background"
                 aria-label="Imagem anterior"
               >
                 <ChevronLeft className="h-5 w-5" />
@@ -964,16 +985,16 @@ function ProductCard({
               <button
                 type="button"
                 onClick={() => moveImage(1)}
-                className="absolute top-1/2 right-2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-background/90 text-foreground shadow hover:bg-background"
+                className="absolute top-1/2 right-3 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-background/90 text-foreground shadow ring-1 ring-border/70 hover:bg-background"
                 aria-label="Próxima imagem"
               >
                 <ChevronRight className="h-5 w-5" />
               </button>
               <div className="pointer-events-none absolute right-2 bottom-2 left-2 flex items-end justify-between gap-2">
-                <span className="min-w-0 truncate rounded bg-background/90 px-2 py-1 text-[11px] font-semibold text-foreground shadow">
+                <span className="min-w-0 truncate rounded bg-background/95 px-2 py-1 text-[11px] font-semibold text-foreground shadow ring-1 ring-border/70">
                   {imageLabel(currentImage)}
                 </span>
-                <span className="shrink-0 rounded bg-background/90 px-2 py-1 text-[11px] font-semibold tabular-nums text-foreground shadow">
+                <span className="shrink-0 rounded bg-background/95 px-2 py-1 text-[11px] font-semibold tabular-nums text-foreground shadow ring-1 ring-border/70">
                   {currentIndex + 1}/{images.length}
                 </span>
               </div>
@@ -984,7 +1005,7 @@ function ProductCard({
         <div className="flex min-h-0 min-w-0 flex-col gap-3 p-4 sm:p-5">
           <div className="grid shrink-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-4">
             <div className="min-w-0">
-              <h3 className="text-lg font-extrabold tracking-tight">{product.reference}</h3>
+              <h3 className="text-xl font-extrabold tracking-tight">{product.reference}</h3>
               <p className="truncate text-sm text-muted-foreground">{product.description}</p>
               <div className="mt-1 flex flex-wrap gap-1.5 text-[11px] font-medium">
                 <span className="rounded bg-primary px-1.5 py-0.5 text-primary-foreground">
@@ -1017,7 +1038,7 @@ function ProductCard({
                 ))}
               </div>
             </div>
-            <div className="shrink-0 text-right">
+            <div className="shrink-0 rounded-md border border-border/70 bg-muted/45 px-3 py-2 text-right">
               <div className="text-[10px] font-semibold tracking-wider text-muted-foreground uppercase">
                 Total
               </div>
@@ -1028,27 +1049,31 @@ function ProductCard({
             </div>
           </div>
 
-          <div className="-mx-1 min-h-0 flex-1 overflow-auto pr-1">
+          <div className="min-h-0 flex-1 overflow-auto rounded-md border border-border/70">
             <table className="w-full min-w-max text-xs">
-              <thead>
+              <thead className="sticky top-0 z-10 bg-card">
                 <tr className="border-b border-border text-left text-muted-foreground">
-                  <th className="px-2 py-1.5 font-semibold">Cor</th>
+                  <th className="px-3 py-2 font-semibold">Cor</th>
                   {allSizes.map((s) => (
-                    <th key={s} className="px-2 py-1.5 text-right font-semibold">{s}</th>
+                    <th key={s} className="px-3 py-2 text-right font-semibold">{s}</th>
                   ))}
-                  <th className="px-2 py-1.5 text-right font-semibold">Total</th>
+                  <th className="px-3 py-2 text-right font-semibold">Total</th>
                 </tr>
               </thead>
               <tbody>
                 {product.colors.map((c) => (
-                  <tr key={c.name} className="border-b border-border/60 last:border-0">
-                    <td className="px-2 py-1.5 font-medium">{c.name}</td>
+                  <tr key={c.name} className="border-b border-border/60 transition last:border-0 hover:bg-muted/45">
+                    <td className="px-3 py-2 font-medium">
+                      <span className="inline-flex rounded bg-muted px-2 py-0.5">
+                        {c.name}
+                      </span>
+                    </td>
                     {allSizes.map((s) => (
-                      <td key={s} className="px-2 py-1.5 text-right tabular-nums">
+                      <td key={s} className="px-3 py-2 text-right tabular-nums">
                         {c.sizes[s] ?? 0}
                       </td>
                     ))}
-                    <td className="px-2 py-1.5 text-right font-bold tabular-nums">
+                    <td className="px-3 py-2 text-right font-bold tabular-nums">
                       {c.total}
                     </td>
                   </tr>
@@ -1075,9 +1100,9 @@ function ProductTable({
   onViewImage: (ref: string, index: number) => void;
 }) {
   return (
-    <div className="overflow-x-auto rounded-lg border border-border bg-card">
+    <div className="overflow-x-auto rounded-lg border border-border/80 bg-card shadow-sm">
       <table className="w-full min-w-[860px] text-sm">
-        <thead className="bg-muted text-xs uppercase tracking-wider text-muted-foreground">
+        <thead className="sticky top-0 z-10 bg-muted text-xs uppercase tracking-wider text-muted-foreground">
           <tr>
             <th className="w-8 p-3"></th>
             <th className="w-24 p-3 text-left font-semibold">Imagem</th>
@@ -1098,7 +1123,7 @@ function ProductTable({
             const extraImages = Math.max(0, images.length - 1);
             return (
               <Fragment key={p.reference}>
-                <tr className="border-t border-border">
+                <tr className="border-t border-border transition hover:bg-muted/40">
                   <td className="p-3">
                     <button
                       onClick={() => setExpandedRow(expanded ? null : p.reference)}
@@ -1123,7 +1148,7 @@ function ProductTable({
                       <ProductImage
                         src={thumbnail?.url}
                         alt={p.reference}
-                        className="h-12 w-12"
+                        className="h-14 w-14"
                       />
                       {extraImages > 0 && (
                         <span className="absolute -right-1 -bottom-1 rounded bg-primary px-1.5 py-0.5 text-[10px] font-semibold text-primary-foreground shadow">
@@ -1132,7 +1157,7 @@ function ProductTable({
                       )}
                     </button>
                   </td>
-                  <td className="p-3 font-bold">{p.reference}</td>
+                  <td className="p-3 font-extrabold">{p.reference}</td>
                   <td className="p-3 text-muted-foreground">{p.description}</td>
                   <td className="p-3">{p.brand}</td>
                   <td className="p-3">{p.collection}</td>
@@ -1142,29 +1167,33 @@ function ProductTable({
                   </td>
                 </tr>
                 {expanded && (
-                  <tr className="border-t border-border bg-muted/30">
+                  <tr className="border-t border-border bg-muted/25">
                     <td colSpan={8} className="p-4">
-                      <div className="overflow-x-auto">
+                      <div className="overflow-x-auto rounded-md border border-border/70 bg-card">
                         <table className="w-full min-w-max text-xs">
-                          <thead>
+                          <thead className="bg-muted/60">
                             <tr className="border-b border-border text-muted-foreground">
-                              <th className="px-2 py-1.5 text-left font-semibold">Cor</th>
+                              <th className="px-3 py-2 text-left font-semibold">Cor</th>
                               {allSizes.map((s) => (
-                                <th key={s} className="px-2 py-1.5 text-right font-semibold">{s}</th>
+                                <th key={s} className="px-3 py-2 text-right font-semibold">{s}</th>
                               ))}
-                              <th className="px-2 py-1.5 text-right font-semibold">Total</th>
+                              <th className="px-3 py-2 text-right font-semibold">Total</th>
                             </tr>
                           </thead>
                           <tbody>
                             {p.colors.map((c) => (
-                              <tr key={c.name} className="border-b border-border/60 last:border-0">
-                                <td className="px-2 py-1.5 font-medium">{c.name}</td>
+                              <tr key={c.name} className="border-b border-border/60 transition last:border-0 hover:bg-muted/40">
+                                <td className="px-3 py-2 font-medium">
+                                  <span className="inline-flex rounded bg-muted px-2 py-0.5">
+                                    {c.name}
+                                  </span>
+                                </td>
                                 {allSizes.map((s) => (
-                                  <td key={s} className="px-2 py-1.5 text-right tabular-nums">
+                                  <td key={s} className="px-3 py-2 text-right tabular-nums">
                                     {c.sizes[s] ?? 0}
                                   </td>
                                 ))}
-                                <td className="px-2 py-1.5 text-right font-bold tabular-nums">
+                                <td className="px-3 py-2 text-right font-bold tabular-nums">
                                   {c.total}
                                 </td>
                               </tr>
@@ -1194,7 +1223,7 @@ function EmptyState({
   action?: React.ReactNode;
 }) {
   return (
-    <div className="rounded-lg border border-dashed border-border bg-card px-6 py-16 text-center">
+    <div className="rounded-lg border border-dashed border-border bg-card px-6 py-16 text-center shadow-sm">
       <h3 className="text-lg font-bold">{title}</h3>
       <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">{description}</p>
       {action && <div className="mt-5">{action}</div>}
