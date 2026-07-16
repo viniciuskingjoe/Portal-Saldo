@@ -372,20 +372,27 @@ function PortalPage() {
     <div className="min-h-screen bg-background pb-24">
       <Toaster position="top-right" />
 
-      <header className="sticky top-0 z-30 border-b border-border/80 bg-background/90 backdrop-blur">
+      <header className="sticky top-0 z-30 bg-[#0b0f0e] text-white border-b border-white/[0.08]">
         <div className="mx-auto flex max-w-[1600px] items-center justify-between gap-4 px-4 py-3 sm:px-6">
-          <div className="min-w-0">
-            <h1 className="truncate text-lg font-extrabold tracking-tight sm:text-xl">
-              Portal Saldo Estoque
-            </h1>
-            <p className="truncate text-xs text-muted-foreground">
-              Disponibilidade interna por referência, cor e tamanho
-            </p>
+          <div className="flex min-w-0 items-center gap-4">
+            {/* Marca AKR (texto, padrão dos portais) */}
+            <div className="flex items-center gap-2.5 text-lg font-extrabold tracking-[0.18em] sm:text-xl">
+              <span>AKR</span>
+              <span className="h-[1.05em] w-px bg-white/40" />
+              <span className="font-light tracking-[0.3em]">BRANDS</span>
+            </div>
+            <div className="hidden h-8 w-px bg-white/15 sm:block" />
+            <div className="hidden min-w-0 sm:block">
+              <h1 className="truncate text-sm font-bold leading-tight">Portal Saldo Estoque</h1>
+              <p className="truncate text-[11px] leading-tight text-slate-400">
+                Disponibilidade interna por referência, cor e tamanho
+              </p>
+            </div>
           </div>
           <button
             type="button"
             onClick={refresh}
-            className="inline-flex h-9 shrink-0 items-center gap-2 rounded-md border border-border bg-card px-3 text-xs font-semibold text-foreground shadow-sm transition hover:bg-muted"
+            className="inline-flex h-9 shrink-0 items-center gap-2 rounded-md border border-white/20 bg-white/5 px-3 text-xs font-semibold text-white transition hover:bg-white/10"
           >
             <RefreshCw className="h-3.5 w-3.5" />
             Atualizar
