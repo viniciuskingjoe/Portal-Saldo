@@ -6,12 +6,14 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  FileSpreadsheet,
   Filter,
   Grid3x3,
   ImageOff,
   LayoutList,
   RefreshCw,
   Search,
+  Trash2,
   X,
 } from "lucide-react";
 
@@ -19,6 +21,7 @@ import { Toaster } from "@/components/ui/sonner";
 import type { Filters, Product, ProductImageInfo, SortKey, ViewMode } from "@/lib/stock-types";
 import { ACCESS_TYPES } from "@/lib/stock-types";
 import { formatNum, formatTime } from "@/lib/format";
+import { exportToExcel } from "@/lib/exporters";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -190,6 +193,8 @@ function PortalPage() {
   });
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(24);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [exporting, setExporting] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [openFilter, setOpenFilter] = useState<FilterKey | null>(null);
   const [filterSearch, setFilterSearch] = useState("");
@@ -364,6 +369,47 @@ function PortalPage() {
     setPage(1);
   };
 
+  // Selecao para exportar
+  const toggleSelect = (reference: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(reference)) next.delete(reference);
+      else next.add(reference);
+      return next;
+    });
+  };
+  const toggleSelectPage = () => {
+    const allPageSelected = pageItems.every((p) => selected.has(p.reference));
+    setSelected((prev) => {
+      const next = new Set(prev);
+      for (const p of pageItems) {
+        if (allPageSelected) next.delete(p.reference);
+        else next.add(p.reference);
+      }
+      return next;
+    });
+  };
+  const clearSelection = () => setSelected(new Set());
+
+  const handleExportExcel = async (onlySelected: boolean) => {
+    // Selecionados respeitam a ordenacao atual; senao exporta tudo que passou nos filtros.
+    const list = onlySelected ? sorted.filter((p) => selected.has(p.reference)) : sorted;
+    if (!list.length) return toast.error("Nenhum produto para exportar.");
+    if (exporting) return;
+
+    setExporting(true);
+    const toastId = toast.loading(`Gerando Excel (${formatNum(list.length)} referências)...`);
+    try {
+      await exportToExcel(list);
+      toast.success("Planilha exportada com sucesso.", { id: toastId });
+    } catch (error) {
+      console.error(error);
+      toast.error("Não foi possível gerar a planilha.", { id: toastId });
+    } finally {
+      setExporting(false);
+    }
+  };
+
   const viewingImageProduct = products.find(
     (product) => product.reference === viewingImage?.reference,
   );
@@ -488,6 +534,15 @@ function PortalPage() {
                 <LayoutList className="h-3.5 w-3.5" /> Tabela
               </button>
             </div>
+            <button
+              onClick={() => handleExportExcel(false)}
+              disabled={exporting || sorted.length === 0}
+              className="inline-flex h-9 items-center gap-1.5 rounded-md border border-border bg-background px-3 text-xs font-semibold shadow-sm transition hover:bg-muted disabled:opacity-50 sm:text-sm"
+              title="Exportar todas as referências filtradas para Excel"
+            >
+              <FileSpreadsheet className="h-3.5 w-3.5" />
+              Excel
+            </button>
           </div>
           </div>
 
@@ -567,6 +622,8 @@ function PortalPage() {
               <ProductCard
                 key={p.reference}
                 product={p}
+                selected={selected.has(p.reference)}
+                onToggleSelect={() => toggleSelect(p.reference)}
                 onViewImage={(index) => setViewingImage({ reference: p.reference, index })}
               />
             ))}
@@ -574,6 +631,9 @@ function PortalPage() {
         ) : (
           <ProductTable
             items={pageItems}
+            selected={selected}
+            onToggleSelect={toggleSelect}
+            onToggleSelectPage={toggleSelectPage}
             expandedRow={expandedRow}
             setExpandedRow={setExpandedRow}
             onViewImage={(reference, index) => {
@@ -625,6 +685,34 @@ function PortalPage() {
           </div>
         )}
       </main>
+
+      {/* Barra de selecao */}
+      {selected.size > 0 && (
+        <div className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-background/95 px-4 py-3 shadow-lg backdrop-blur sm:px-6">
+          <div className="mx-auto flex max-w-[1600px] flex-wrap items-center justify-between gap-3">
+            <div className="text-sm">
+              <span className="font-semibold">{formatNum(selected.size)}</span>{" "}
+              {selected.size === 1 ? "referência selecionada" : "referências selecionadas"}
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                onClick={() => handleExportExcel(true)}
+                disabled={exporting}
+                className="inline-flex h-9 items-center gap-1.5 rounded-md bg-primary px-3 text-xs font-semibold text-primary-foreground shadow-sm transition hover:opacity-90 disabled:opacity-50"
+              >
+                <FileSpreadsheet className="h-3.5 w-3.5" /> Excel da seleção
+              </button>
+              <button
+                onClick={clearSelection}
+                className="inline-flex h-9 items-center gap-1.5 rounded-md border border-border bg-card px-3 text-xs font-semibold transition hover:bg-muted"
+                aria-label="Limpar seleção"
+              >
+                <Trash2 className="h-3.5 w-3.5" /> Limpar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {viewingImageProduct && productImages(viewingImageProduct).length > 0 && (
         <ProductImageViewerDialog
@@ -933,9 +1021,13 @@ function ProductImageViewerDialog({
 
 function ProductCard({
   product,
+  selected,
+  onToggleSelect,
   onViewImage,
 }: {
   product: Product;
+  selected: boolean;
+  onToggleSelect: () => void;
   onViewImage: (index: number) => void;
 }) {
   const allSizes = useMemo(() => availableSizes(product), [product]);
@@ -955,9 +1047,22 @@ function ProductCard({
   };
 
   return (
-    <article className="overflow-hidden rounded-lg border border-border/80 bg-card shadow-sm transition hover:border-border hover:shadow-md">
+    <article
+      className={`overflow-hidden rounded-lg border bg-card shadow-sm transition hover:shadow-md ${
+        selected ? "border-primary ring-1 ring-primary" : "border-border/80 hover:border-border"
+      }`}
+    >
       <div className="grid grid-cols-1 md:min-h-[400px] md:grid-cols-[280px_minmax(0,1fr)]">
         <div className="relative h-80 bg-white md:h-auto md:min-h-[400px]">
+          <label className="absolute top-3 left-3 z-20 inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-md border border-border bg-background/95 shadow-sm">
+            <input
+              type="checkbox"
+              checked={selected}
+              onChange={onToggleSelect}
+              className="h-4 w-4 cursor-pointer accent-primary"
+              aria-label={`Selecionar ${product.reference} para exportar`}
+            />
+          </label>
           <button
             type="button"
             onClick={() => onViewImage(currentIndex)}
@@ -1097,20 +1202,36 @@ function ProductCard({
 
 function ProductTable({
   items,
+  selected,
+  onToggleSelect,
+  onToggleSelectPage,
   expandedRow,
   setExpandedRow,
   onViewImage,
 }: {
   items: Product[];
+  selected: Set<string>;
+  onToggleSelect: (ref: string) => void;
+  onToggleSelectPage: () => void;
   expandedRow: string | null;
   setExpandedRow: (r: string | null) => void;
   onViewImage: (ref: string, index: number) => void;
 }) {
+  const allPageSelected = items.length > 0 && items.every((p) => selected.has(p.reference));
   return (
     <div className="overflow-x-auto rounded-lg border border-border/80 bg-card shadow-sm">
       <table className="w-full min-w-[860px] text-sm">
         <thead className="sticky top-0 z-10 bg-muted text-xs uppercase tracking-wider text-muted-foreground">
           <tr>
+            <th className="w-10 p-3">
+              <input
+                type="checkbox"
+                checked={allPageSelected}
+                onChange={onToggleSelectPage}
+                className="h-4 w-4 cursor-pointer accent-primary"
+                aria-label="Selecionar todos da página"
+              />
+            </th>
             <th className="w-8 p-3"></th>
             <th className="w-24 p-3 text-left font-semibold">Imagem</th>
             <th className="p-3 text-left font-semibold">Referência</th>
@@ -1128,9 +1249,23 @@ function ProductTable({
             const images = productImages(p);
             const thumbnail = images[0];
             const extraImages = Math.max(0, images.length - 1);
+            const isSelected = selected.has(p.reference);
             return (
               <Fragment key={p.reference}>
-                <tr className="border-t border-border transition hover:bg-muted/40">
+                <tr
+                  className={`border-t border-border transition hover:bg-muted/40 ${
+                    isSelected ? "bg-primary/5" : ""
+                  }`}
+                >
+                  <td className="p-3">
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => onToggleSelect(p.reference)}
+                      className="h-4 w-4 cursor-pointer accent-primary"
+                      aria-label={`Selecionar ${p.reference} para exportar`}
+                    />
+                  </td>
                   <td className="p-3">
                     <button
                       onClick={() => setExpandedRow(expanded ? null : p.reference)}
@@ -1175,7 +1310,7 @@ function ProductTable({
                 </tr>
                 {expanded && (
                   <tr className="border-t border-border bg-muted/25">
-                    <td colSpan={8} className="p-4">
+                    <td colSpan={9} className="p-4">
                       <div className="overflow-x-auto rounded-md border border-border/70 bg-card">
                         <table className="w-full min-w-max text-xs">
                           <thead className="bg-muted/60">
