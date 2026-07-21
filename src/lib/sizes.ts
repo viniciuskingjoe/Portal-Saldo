@@ -60,9 +60,9 @@ export function compareSizes(a: string, b: string): number {
 export type SizeFamily = "play" | "baixo" | "cima" | "outros";
 
 export const SIZE_FAMILY_LABELS: Record<SizeFamily, string> = {
-  play: "Play (1 a 18)",
-  baixo: "Parte de baixo (38 a 50)",
-  cima: "Parte de cima (P a XXG)",
+  play: "1 a 18",
+  baixo: "38 a 50",
+  cima: "P a XXG",
   outros: "Outros",
 };
 
