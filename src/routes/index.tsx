@@ -21,6 +21,13 @@ import { Toaster } from "@/components/ui/sonner";
 import type { Filters, Product, ProductImageInfo, SortKey, ViewMode } from "@/lib/stock-types";
 import { ACCESS_TYPES } from "@/lib/stock-types";
 import { formatNum, formatTime } from "@/lib/format";
+import {
+  compareSizes,
+  productSizeFamily,
+  SIZE_FAMILY_LABELS,
+  SIZE_FAMILY_ORDER,
+  type SizeFamily,
+} from "@/lib/sizes";
 import { exportToExcel } from "@/lib/exporters";
 
 export const Route = createFileRoute("/")({
@@ -117,13 +124,6 @@ function applyFilters(items: Product[], f: Filters): Product[] {
   });
 }
 
-function sortSizeLabels(a: string, b: string): number {
-  const na = Number(a);
-  const nb = Number(b);
-  if (!isNaN(na) && !isNaN(nb)) return na - nb;
-  return a.localeCompare(b);
-}
-
 function availableSizes(product: Product): string[] {
   const sizes = new Set<string>();
   for (const color of product.colors) {
@@ -131,7 +131,7 @@ function availableSizes(product: Product): string[] {
       if (size.trim() && quantity > 0) sizes.add(size);
     }
   }
-  return [...sizes].sort(sortSizeLabels);
+  return [...sizes].sort(compareSizes);
 }
 
 function proxiedDisplayImageUrl(src?: string): string | undefined {
@@ -195,6 +195,7 @@ function PortalPage() {
   const [pageSize, setPageSize] = useState(24);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [exporting, setExporting] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [openFilter, setOpenFilter] = useState<FilterKey | null>(null);
   const [filterSearch, setFilterSearch] = useState("");
@@ -391,9 +392,7 @@ function PortalPage() {
   };
   const clearSelection = () => setSelected(new Set());
 
-  const handleExportExcel = async (onlySelected: boolean) => {
-    // Selecionados respeitam a ordenacao atual; senao exporta tudo que passou nos filtros.
-    const list = onlySelected ? sorted.filter((p) => selected.has(p.reference)) : sorted;
+  const runExport = async (list: Product[]) => {
     if (!list.length) return toast.error("Nenhum produto para exportar.");
     if (exporting) return;
 
@@ -535,7 +534,7 @@ function PortalPage() {
               </button>
             </div>
             <button
-              onClick={() => handleExportExcel(false)}
+              onClick={() => setExportOpen(true)}
               disabled={exporting || sorted.length === 0}
               className="inline-flex h-9 items-center gap-1.5 rounded-md border border-border bg-background px-3 text-xs font-semibold shadow-sm transition hover:bg-muted disabled:opacity-50 sm:text-sm"
               title="Exportar todas as referências filtradas para Excel"
@@ -696,7 +695,7 @@ function PortalPage() {
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <button
-                onClick={() => handleExportExcel(true)}
+                onClick={() => runExport(sorted.filter((p) => selected.has(p.reference)))}
                 disabled={exporting}
                 className="inline-flex h-9 items-center gap-1.5 rounded-md bg-primary px-3 text-xs font-semibold text-primary-foreground shadow-sm transition hover:opacity-90 disabled:opacity-50"
               >
@@ -712,6 +711,18 @@ function PortalPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {exportOpen && (
+        <ExportDialog
+          products={sorted}
+          exporting={exporting}
+          onClose={() => setExportOpen(false)}
+          onExport={async (list) => {
+            setExportOpen(false);
+            await runExport(list);
+          }}
+        />
       )}
 
       {viewingImageProduct && productImages(viewingImageProduct).length > 0 && (
@@ -1013,6 +1024,240 @@ function ProductImageViewerDialog({
               </div>
             </>
           )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ExportChecklist({
+  title,
+  options,
+  selected,
+  onToggle,
+  onClear,
+}: {
+  title: string;
+  options: string[];
+  selected: string[];
+  onToggle: (value: string) => void;
+  onClear: () => void;
+}) {
+  const [search, setSearch] = useState("");
+  const normalized = search.trim().toLowerCase();
+  const visible = normalized
+    ? options.filter((option) => option.toLowerCase().includes(normalized))
+    : options;
+
+  return (
+    <div className="flex min-h-0 flex-col rounded-md border border-border">
+      <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
+        <span className="text-xs font-semibold">
+          {title}
+          {selected.length > 0 && (
+            <span className="ml-1.5 text-muted-foreground">({selected.length})</span>
+          )}
+        </span>
+        {selected.length > 0 && (
+          <button
+            type="button"
+            onClick={onClear}
+            className="text-[11px] text-muted-foreground underline-offset-2 hover:underline"
+          >
+            Limpar
+          </button>
+        )}
+      </div>
+
+      <div className="relative border-b border-border">
+        <Search className="pointer-events-none absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+        <input
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+          placeholder={`Buscar ${title.toLowerCase()}...`}
+          className="h-9 w-full bg-transparent pr-3 pl-8 text-xs outline-none"
+        />
+      </div>
+
+      <div className="max-h-56 min-h-0 flex-1 overflow-y-auto p-1">
+        {visible.map((option) => {
+          const on = selected.includes(option);
+          return (
+            <label
+              key={option}
+              className={`flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-xs transition hover:bg-muted ${
+                on ? "font-semibold" : ""
+              }`}
+            >
+              <input
+                type="checkbox"
+                checked={on}
+                onChange={() => onToggle(option)}
+                className="h-3.5 w-3.5 accent-primary"
+              />
+              <span className="truncate">{option}</span>
+            </label>
+          );
+        })}
+        {visible.length === 0 && (
+          <div className="px-2 py-6 text-center text-xs text-muted-foreground">
+            Nenhum resultado
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ExportDialog({
+  products,
+  exporting,
+  onClose,
+  onExport,
+}: {
+  products: Product[];
+  exporting: boolean;
+  onClose: () => void;
+  onExport: (list: Product[]) => void;
+}) {
+  const [brands, setBrands] = useState<string[]>([]);
+  const [subgroups, setSubgroups] = useState<string[]>([]);
+
+  const options = useMemo(() => {
+    const brandSet = new Set<string>();
+    const subgroupSet = new Set<string>();
+    for (const product of products) {
+      brandSet.add(product.brand);
+      subgroupSet.add(product.subgroup);
+    }
+    return {
+      brands: [...brandSet].sort(),
+      subgroups: [...subgroupSet].sort(),
+    };
+  }, [products]);
+
+  // Sem nada marcado = exporta tudo que ja passou pelos filtros do portal.
+  const result = useMemo(
+    () =>
+      products.filter(
+        (product) =>
+          (brands.length === 0 || brands.includes(product.brand)) &&
+          (subgroups.length === 0 || subgroups.includes(product.subgroup)),
+      ),
+    [products, brands, subgroups],
+  );
+
+  const sheets = useMemo(() => {
+    const counts = new Map<SizeFamily, number>();
+    for (const product of result) {
+      const sizes = new Set<string>();
+      for (const color of product.colors) {
+        for (const [size, quantity] of Object.entries(color.sizes)) {
+          if (size.trim() && quantity > 0) sizes.add(size);
+        }
+      }
+      const family = productSizeFamily([...sizes]);
+      counts.set(family, (counts.get(family) ?? 0) + 1);
+    }
+    return SIZE_FAMILY_ORDER.filter((family) => (counts.get(family) ?? 0) > 0).map((family) => ({
+      family,
+      label: SIZE_FAMILY_LABELS[family],
+      count: counts.get(family) ?? 0,
+    }));
+  }, [result]);
+
+  const pieces = result.reduce((sum, product) => sum + product.totalQuantity, 0);
+
+  const toggle = (list: string[], setList: (v: string[]) => void, value: string) => {
+    setList(list.includes(value) ? list.filter((item) => item !== value) : [...list, value]);
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+      onClick={onClose}
+    >
+      <div
+        className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-lg border border-border bg-background shadow-xl"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-3 border-b border-border p-4">
+          <div>
+            <h2 className="flex items-center gap-2 text-base font-bold">
+              <FileSpreadsheet className="h-4 w-4" />
+              Exportar para Excel
+            </h2>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              Opcional: restrinja por griffe e subgrupo. Sem marcar nada, exporta tudo que está
+              filtrado.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+            aria-label="Fechar"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="grid min-h-0 flex-1 gap-3 overflow-y-auto p-4 sm:grid-cols-2">
+          <ExportChecklist
+            title="Griffe"
+            options={options.brands}
+            selected={brands}
+            onToggle={(value) => toggle(brands, setBrands, value)}
+            onClear={() => setBrands([])}
+          />
+          <ExportChecklist
+            title="Subgrupo"
+            options={options.subgroups}
+            selected={subgroups}
+            onToggle={(value) => toggle(subgroups, setSubgroups, value)}
+            onClear={() => setSubgroups([])}
+          />
+        </div>
+
+        <div className="border-t border-border bg-muted/30 px-4 py-3">
+          <div className="text-xs text-muted-foreground">
+            <span className="font-semibold text-foreground">
+              {formatNum(result.length)} referências
+            </span>{" "}
+            · {formatNum(pieces)} peças · {sheets.length}{" "}
+            {sheets.length === 1 ? "aba" : "abas"} na planilha
+          </div>
+          {sheets.length > 0 && (
+            <div className="mt-1.5 flex flex-wrap gap-1.5">
+              {sheets.map((sheet) => (
+                <span
+                  key={sheet.family}
+                  className="rounded border border-border bg-background px-1.5 py-0.5 text-[11px] font-medium"
+                >
+                  {sheet.label} · {formatNum(sheet.count)}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="flex justify-end gap-2 border-t border-border p-4">
+          <button
+            type="button"
+            onClick={onClose}
+            className="h-9 rounded-md border border-border px-4 text-sm font-semibold transition hover:bg-muted"
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            onClick={() => onExport(result)}
+            disabled={exporting || result.length === 0}
+            className="inline-flex h-9 items-center gap-1.5 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground transition hover:opacity-90 disabled:opacity-50"
+          >
+            <FileSpreadsheet className="h-4 w-4" />
+            Exportar
+          </button>
         </div>
       </div>
     </div>
